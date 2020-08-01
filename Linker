@@ -1,0 +1,194 @@
+import bpy
+import os
+from bpy.app.handlers import persistent
+
+bl_info = {
+    "name" : "FBXLinker",
+    "author" : "Lukasz Hoffmann",
+    "version" : (1, 0, 0),
+    "blender" : (2, 80, 0),
+    "location" : "View 3D > Object Mode > Tool Shelf",
+    "description" :
+    "Link fbx files",
+    "warning" : "",
+    "wiki_url" : "",
+    "tracker_url" : "",
+    "category" : "Object",
+    }
+   
+@persistent
+def load_handler(dummy):
+    print("Load Handler:", bpy.data.filepath)
+
+bpy.app.handlers.load_post.append(load_handler)       
+     
+def registerprops():
+    bpy.types.Scene.temp_date = bpy.props.StringProperty \
+    (
+     name = "Date",
+     description = "Date",
+     default = ""
+    )   
+    
+tracked_objects=[]    
+supported_types=['MESH']    
+    
+def importfbx(filepath):
+    bpy.ops.import_scene.fbx( filepath = filepath)
+    time=os.path.getmtime(filepath)
+    index=0
+    for obj in bpy.context.selected_objects:
+        obj["linkpath"]=str(filepath)
+        obj["linktime"]=str(time)
+        obj["linkid"]=index
+        index=index+1
+        tracked_objects.append(obj)     
+    
+def deldependancies(obj):
+    linkpath=obj["linkpath"]
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in tracked_objects:              
+        try:
+            on=o.name
+        except:            
+            continue      
+        if (str(o["linkpath"])==str(linkpath)): 
+            o.select_set(True)
+    for o in bpy.context.selected_objects:
+        tracked_objects.remove(o)         
+    bpy.ops.object.delete(use_global=False)
+    bpy.ops.object.select_all(action='DESELECT')
+    
+def get_indices_from_selection():
+    indices=[]
+    for s in bpy.context.selected_objects:
+        if ("linkid" in s):
+            indices.append(s["linkid"])    
+    return(indices)
+    
+class OBJECT_OT_HeartBeat(bpy.types.Operator):
+    bl_idname = "fbxlinker.heartbeat"
+    bl_label = "Heartbeat modal operator"
+    _timer = None
+    def modal(self, context, event):
+        if event.type in {'ESC'}:
+            self.cancel(context)            
+            return {'CANCELLED'}
+        if event.type == 'TIMER':
+            if (bpy.context.object!=None and bpy.context.object.mode=='OBJECT'):
+                path=""
+                reimport=False
+                oldselected=[]
+                oldselectedindices=[]
+                oldactive=[]
+                oldactiveindex=[]
+                object_to_merge=None
+                for obj in tracked_objects: 
+                    try:
+                        o=obj.name
+                    except:
+                        tracked_objects.remove(obj) 
+                        continue   
+                    if ("linkpath" in obj) and (not obj==None):                            
+                        path=obj["linkpath"]            
+                        time=str(os.path.getmtime(path))
+                        if (not time==obj["linktime"]):
+                            reimport=True
+                            oldselected=bpy.context.selected_objects
+                            oldselectedindices=get_indices_from_selection()
+                            if ("linkid" in bpy.context.view_layer.objects.active): oldactiveindex=bpy.context.view_layer.objects.active["linkid"]
+                            oldactive=bpy.context.view_layer.objects.active
+                            object_to_merge=obj
+                            break                            
+                if reimport: 
+                    deldependancies(object_to_merge)
+                    importfbx(path) 
+                    bpy.ops.object.select_all(action='DESELECT') 
+                    activedeleted=False
+                    selectiondeleted=False  
+                    for o in oldselected:
+                        try:
+                            o.select_set(True)
+                        except:
+                            selectiondeleted=True
+                            pass
+                        try:            
+                            bpy.context.view_layer.objects.active=oldactive
+                        except:
+                            activedeleted=True
+                            pass 
+                    if activedeleted:
+                        for o in tracked_objects:
+                            if ("linkpath" in o and "linkid" in o):
+                                if (o["linkpath"]==path and o["linkid"]==oldactiveindex): bpy.context.view_layer.objects.active=o
+                    if selectiondeleted:
+                        for o in tracked_objects:
+                            if ("linkpath" in o and "linkid" in o):
+                                if (o["linkpath"]==path):
+                                    for i in oldselectedindices:
+                                        if o["linkid"]==i: o.select_set(True)    
+                                                   
+                                
+        return {'PASS_THROUGH'}
+    def cancel(self, context):
+        wm = context.window_manager
+        wm.event_timer_remove(self._timer)    
+    def execute(self, context):
+        wm = context.window_manager
+        self._timer = wm.event_timer_add(1, window=context.window)
+        wm.modal_handler_add(self)
+        return {'RUNNING_MODAL'}        
+    
+class Open_OT_OpenBrowser(bpy.types.Operator):
+        bl_idname = "open.browser"
+        bl_label = "Choose FBX to link"
+        filepath: bpy.props.StringProperty(subtype="DIR_PATH") 
+        #somewhere to remember the address of the file
+
+        def execute(self, context):
+            importfbx(self.filepath)  
+            return {'FINISHED'}
+
+        def invoke(self, context, event): # See comments at end  [1]
+
+            context.window_manager.fileselect_add(self) 
+            #Open browser, take reference to 'self' 
+            #read the path to selected file, 
+            #put path in declared string type data structure self.filepath
+
+            return {'RUNNING_MODAL'}
+    
+class OBJECT_OT_LinkButton(bpy.types.Operator):    
+    bl_idname = "fbxlinker.linkbutton"   
+    bl_label = "Link"
+    def execute(self, context):
+        return bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT') 
+        return {'FINISHED'}
+    
+class PANEL_PT_FBXLinkerMenu(bpy.types.Panel):
+    bl_label = "FBXLinker"
+    bl_idname = "OBJECT_PT_FBXLinkerMenu"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "FBXLinker"
+    
+    def draw(self, context):        
+        layout = self.layout        
+        row = layout.row()
+        boxLink = self.layout.box() 
+        boxLink.label(text="Link files")  
+        boxLink.operator("open.browser", icon="FILE_FOLDER", text="")
+        boxLink.operator("fbxlinker.linkbutton")     
+        
+classes =(
+PANEL_PT_FBXLinkerMenu,
+Open_OT_OpenBrowser,
+OBJECT_OT_HeartBeat,
+OBJECT_OT_LinkButton,
+)            
+
+register, unregister = bpy.utils.register_classes_factory(classes) 
+
+if __name__ == "__main__":
+    registerprops()
+    register()
