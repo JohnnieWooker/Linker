@@ -3,9 +3,9 @@ import os
 from bpy.app.handlers import persistent
 
 bl_info = {
-    "name" : "FBXLinker",
+    "name" : "Linker",
     "author" : "Lukasz Hoffmann",
-    "version" : (1, 0, 0),
+    "version" : (1, 0, 1),
     "blender" : (2, 80, 0),
     "location" : "View 3D > Object Mode > Tool Shelf",
     "description" :
@@ -38,6 +38,8 @@ def registerprops():
      default = ""
     )   
     bpy.types.Scene.syncbuttonname=bpy.props.StringProperty(name="Sync button name", default="Start Sync")
+    bpy.types.Scene.linkbuttonname=bpy.props.StringProperty(name="Link button name", default="Link")
+    bpy.types.Scene.linkstatusname=bpy.props.StringProperty(name="Link status name", default="Linked")
     bpy.types.Scene.isinsync=bpy.props.BoolProperty(name="isinsync", description="isinsync", default=False)    
     
 tracked_objects=[]    
@@ -159,6 +161,17 @@ class OBJECT_OT_HeartBeat(bpy.types.Operator):
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}        
     
+def togglelink():   
+    obj=bpy.context.view_layer.objects.active
+    if (obj in tracked_objects):
+        tracked_objects.remove(obj)
+        bpy.context.scene.linkbuttonname="Link"
+        bpy.context.scene.linkstatusname="Unlinked"
+    else: 
+        tracked_objects.append(obj)
+        bpy.context.scene.linkbuttonname="Unlink"
+        bpy.context.scene.linkstatusname="Linked" 
+    
 class Open_OT_OpenBrowser(bpy.types.Operator):
         bl_idname = "open.browser"
         bl_label = "Choose FBX to link"
@@ -186,8 +199,39 @@ class OBJECT_OT_LinkButton(bpy.types.Operator):
         return bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT') 
         return {'FINISHED'}
     
+class OBJECT_OT_SingleLinkButton(bpy.types.Operator):    
+    bl_idname = "fbxlinker.singlelinkbutton"   
+    bl_label = "Link"
+    def execute(self, context):        
+        togglelink()
+        return {'FINISHED'}    
+    
+class PANEL_PT_FBXLinkerSubPanelDynamic(bpy.types.Panel):     
+    bl_label = "Link status"
+    bl_idname = "PANEL_PT_FBXLinkerSubPanelDynamic"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "FBXLinker"   
+    @classmethod
+    def poll(cls, context):
+        if (context.active_object != None):
+            return bpy.context.view_layer.objects.active.tracking.tracked
+        else: return False
+    
+    def draw(self, context):  
+        row=self.layout.row()
+        box = self.layout.box() 
+        box.row()
+        if bpy.context.view_layer.objects.active in tracked_objects:
+            box.label(text=bpy.context.scene.linkstatusname)  
+            box.operator("fbxlinker.singlelinkbutton", text="Unlink") 
+        else:
+            box.operator("fbxlinker.singlelinkbutton", text="Link")         
+        box.label(text="path: "+bpy.context.view_layer.objects.active.tracking.linkpath)
+        
+    
 class PANEL_PT_FBXLinkerMenu(bpy.types.Panel):
-    bl_label = "FBXLinker"
+    bl_label = "Linker"
     bl_idname = "OBJECT_PT_FBXLinkerMenu"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -206,6 +250,8 @@ PANEL_PT_FBXLinkerMenu,
 Open_OT_OpenBrowser,
 OBJECT_OT_HeartBeat,
 OBJECT_OT_LinkButton,
+OBJECT_OT_SingleLinkButton,
+PANEL_PT_FBXLinkerSubPanelDynamic,
 )            
 
 register, unregister = bpy.utils.register_classes_factory(classes) 
