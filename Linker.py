@@ -5,7 +5,7 @@ from bpy.app.handlers import persistent
 bl_info = {
     "name" : "Linker",
     "author" : "Lukasz Hoffmann",
-    "version" : (1, 0, 1),
+    "version" : (1, 0, 2),
     "blender" : (2, 80, 0),
     "location" : "View 3D > Object Mode > Tool Shelf",
     "description" :
@@ -16,14 +16,10 @@ bl_info = {
     "category" : "Object",
     }
    
-@persistent
-def load_handler(dummy):
-    print("Load Handler:", bpy.data.filepath)
-
-bpy.app.handlers.load_post.append(load_handler)       
+tracked_objects=[]    
+supported_types=['MESH']         
 
 class LinkerVariables(bpy.types.PropertyGroup):
-    count = bpy.props.IntProperty()
     object = bpy.props.PointerProperty(name="object", type=bpy.types.Object)    
 
 class TrackingSettings(bpy.types.PropertyGroup):
@@ -47,14 +43,31 @@ def registerprops():
     bpy.types.Scene.syncbuttonname=bpy.props.StringProperty(name="Sync button name", default="Start Sync")
     bpy.types.Scene.linkbuttonname=bpy.props.StringProperty(name="Link button name", default="Link")
     bpy.types.Scene.linkstatusname=bpy.props.StringProperty(name="Link status name", default="Linked")
-    bpy.types.Scene.isinsync=bpy.props.BoolProperty(name="isinsync", description="isinsync", default=False)    
-    
-tracked_objects=[]    
-supported_types=['MESH']    
+    bpy.types.Scene.isinsync=bpy.props.BoolProperty(name="isinsync", description="isinsync", default=False)        
     
 def appendobject(obj):
     item=bpy.context.scene.tracked_objects.add()
     item.object=obj
+
+def istracked(obj):
+    for o in bpy.context.scene.tracked_objects:
+        if o.object==obj:
+            return True
+    return False
+
+def removeobject(obj):
+    counter=0
+    for o in bpy.context.scene.tracked_objects:
+        if o.object==obj:
+            bpy.context.scene.tracked_objects.remove(counter)    
+        counter=counter+1
+
+@persistent
+def load_handler(dummy):
+    bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT')
+    bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT')
+
+bpy.app.handlers.load_post.append(load_handler)     
     
 def importfbx(filepath):
     bpy.ops.import_scene.fbx( filepath = filepath)
@@ -66,21 +79,25 @@ def importfbx(filepath):
         obj.tracking.linkid=index
         obj.tracking.tracked=True
         index=index+1
-        tracked_objects.append(obj)     
+        appendobject(obj)     
     
 def deldependancies(obj):
     linkpath=obj.tracking.linkpath
     bpy.ops.object.select_all(action='DESELECT')
-    for o in tracked_objects:              
+    for onb in bpy.context.scene.tracked_objects:    
+        o=onb.object          
         try:
             on=o.name
         except:            
             continue      
         if (str(o.tracking.linkpath)==str(linkpath)): 
-            o.select_set(True)
+            try:
+                o.select_set(True)
+            except:
+                removeobject(o)    
     for o in bpy.context.selected_objects:
         o.tracking.tracked=False
-        tracked_objects.remove(o)         
+        removeobject(o)         
     bpy.ops.object.delete(use_global=False)
     bpy.ops.object.select_all(action='DESELECT')
     
@@ -116,23 +133,27 @@ class OBJECT_OT_HeartBeat(bpy.types.Operator):
                 oldactive=[]
                 oldactiveindex=[]
                 object_to_merge=None
-                for obj in tracked_objects: 
+                for on in bpy.context.scene.tracked_objects: 
+                    obj=on.object
                     try:
                         o=obj.name
                     except:
-                        tracked_objects.remove(obj) 
+                        removeobject(obj) 
                         continue   
-                    if (obj.tracking.tracked) and (not obj==None):                            
-                        path=obj.tracking.linkpath          
-                        time=str(os.path.getmtime(path))
-                        if (not time==obj.tracking.linktime):
-                            reimport=True
-                            oldselected=bpy.context.selected_objects
-                            oldselectedindices=get_indices_from_selection()
-                            if (obj.tracking.linkid!=-1): oldactiveindex=bpy.context.view_layer.objects.active.tracking.linkid
-                            oldactive=bpy.context.view_layer.objects.active
-                            object_to_merge=obj
-                            break                            
+                    if (obj.tracking.tracked) and (not obj==None): 
+                        path=obj.tracking.linkpath      
+                        if os.path.isfile(path):      
+                            time=str(os.path.getmtime(path))
+                            if (not time==obj.tracking.linktime):
+                                reimport=True
+                                oldselected=bpy.context.selected_objects
+                                oldselectedindices=get_indices_from_selection()
+                                if (obj.tracking.linkid!=-1): oldactiveindex=bpy.context.view_layer.objects.active.tracking.linkid
+                                oldactive=bpy.context.view_layer.objects.active
+                                object_to_merge=obj
+                                break      
+                        else: 
+                            removeobject(obj)                    
                 if reimport: 
                     deldependancies(object_to_merge)
                     importfbx(path) 
@@ -151,15 +172,21 @@ class OBJECT_OT_HeartBeat(bpy.types.Operator):
                             activedeleted=True
                             pass 
                     if activedeleted:
-                        for o in tracked_objects:
+                        for on in bpy.context.scene.tracked_objects:
+                            o=on.object
                             if (o.tracking.tracked):
                                 if (o.tracking.linkpath==path and o.tracking.linkid==oldactiveindex): bpy.context.view_layer.objects.active=o
                     if selectiondeleted:
-                        for o in tracked_objects:
+                        for on in bpy.context.scene.tracked_objects:
+                            o=on.object
                             if (o.tracking.tracked):
                                 if (o.tracking.linkpath==path):
                                     for i in oldselectedindices:
-                                        if o.tracking.linkid==i: o.select_set(True)    
+                                        if o.tracking.linkid==i: 
+                                            try:
+                                                o.select_set(True)    
+                                            except:
+                                                removeobject(o)    
                                                    
                                 
         return {'PASS_THROUGH'}
@@ -172,16 +199,20 @@ class OBJECT_OT_HeartBeat(bpy.types.Operator):
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}        
     
-def togglelink():   
+def togglelink(self):   
     obj=bpy.context.view_layer.objects.active
-    if (obj in tracked_objects):
-        tracked_objects.remove(obj)
+    if (istracked(obj)):
+        removeobject(obj)
         bpy.context.scene.linkbuttonname="Link"
         bpy.context.scene.linkstatusname="Unlinked"
     else: 
-        tracked_objects.append(obj)
-        bpy.context.scene.linkbuttonname="Unlink"
-        bpy.context.scene.linkstatusname="Linked" 
+        path=obj.tracking.linkpath
+        if (os.path.isfile(path)):
+            appendobject(obj)
+            bpy.context.scene.linkbuttonname="Unlink"
+            bpy.context.scene.linkstatusname="Linked" 
+        else:
+            self.report({'ERROR'}, 'File doesn\'t exists')    
     
 class Open_OT_OpenBrowser(bpy.types.Operator):
         bl_idname = "open.browser"
@@ -214,16 +245,16 @@ class OBJECT_OT_SingleLinkButton(bpy.types.Operator):
     bl_idname = "fbxlinker.singlelinkbutton"   
     bl_label = "Link"
     def execute(self, context):        
-        togglelink()
+        togglelink(self)
         return {'FINISHED'} 
        
 class OBJECT_OT_DebugButton(bpy.types.Operator):    
     bl_idname = "fbxlinker.debugbutton"   
     bl_label = "Debug"
     def execute(self, context):     
-        appendobject(bpy.context.view_layer.objects.active)
+        #appendobject(bpy.context.view_layer.objects.active)
         print(len(bpy.context.scene.tracked_objects))     
-        for o in tracked_objects:
+        for o in bpy.context.scene.tracked_objects:
             print(o)      
         return {'FINISHED'}        
     
@@ -243,7 +274,7 @@ class PANEL_PT_FBXLinkerSubPanelDynamic(bpy.types.Panel):
         row=self.layout.row()
         box = self.layout.box() 
         box.row()
-        if bpy.context.view_layer.objects.active in tracked_objects:
+        if istracked(bpy.context.view_layer.objects.active):
             box.label(text=bpy.context.scene.linkstatusname)  
             box.operator("fbxlinker.singlelinkbutton", text="Unlink") 
         else:
