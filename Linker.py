@@ -1,4 +1,5 @@
 import bpy
+import bpy_extras
 import os
 from bpy.app.handlers import persistent
 
@@ -214,11 +215,14 @@ def togglelink(self):
         else:
             self.report({'ERROR'}, 'File doesn\'t exists')    
     
-class Open_OT_OpenBrowser(bpy.types.Operator):
+class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
         bl_idname = "open.browser"
         bl_label = "Choose FBX to link"
-        filepath: bpy.props.StringProperty(subtype="FILE_PATH", default="*.obj;*;*.fbx",
-        options={'HIDDEN'},) 
+        filter_glob = bpy.props.StringProperty(
+        default="*.obj;*.fbx",
+        options={'HIDDEN'}
+    )
+        filepath: bpy.props.StringProperty(subtype="FILE_PATH") 
         #somewhere to remember the address of the file
 
         def execute(self, context):
