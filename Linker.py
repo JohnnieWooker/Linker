@@ -9,7 +9,7 @@ bl_info = {
     "blender" : (2, 80, 0),
     "location" : "View 3D > Object Mode > Tool Shelf",
     "description" :
-    "Link fbx files",
+    "Link FBX files",
     "warning" : "",
     "wiki_url" : "",
     "tracker_url" : "",
@@ -22,14 +22,21 @@ def load_handler(dummy):
 
 bpy.app.handlers.load_post.append(load_handler)       
 
+class LinkerVariables(bpy.types.PropertyGroup):
+    count = bpy.props.IntProperty()
+    object = bpy.props.PointerProperty(name="object", type=bpy.types.Object)    
+
 class TrackingSettings(bpy.types.PropertyGroup):
     linkid = bpy.props.IntProperty()
     linktime = bpy.props.StringProperty()
     linkpath = bpy.props.StringProperty()
     tracked=bpy.props.BoolProperty(default=False)
      
-def registerprops():    
+def registerprops():  
+    bpy.utils.register_class(LinkerVariables)
+    bpy.types.Scene.tracked_objects = bpy.props.CollectionProperty(type = LinkerVariables)    
     bpy.utils.register_class(TrackingSettings)
+    #bpy.context.scene.tracked_objects.clear()
     bpy.types.Object.tracking = bpy.props.PointerProperty(type=TrackingSettings)
     bpy.types.Scene.temp_date = bpy.props.StringProperty \
     (
@@ -44,6 +51,10 @@ def registerprops():
     
 tracked_objects=[]    
 supported_types=['MESH']    
+    
+def appendobject(obj):
+    item=bpy.context.scene.tracked_objects.add()
+    item.object=obj
     
 def importfbx(filepath):
     bpy.ops.import_scene.fbx( filepath = filepath)
@@ -204,14 +215,24 @@ class OBJECT_OT_SingleLinkButton(bpy.types.Operator):
     bl_label = "Link"
     def execute(self, context):        
         togglelink()
-        return {'FINISHED'}    
+        return {'FINISHED'} 
+       
+class OBJECT_OT_DebugButton(bpy.types.Operator):    
+    bl_idname = "fbxlinker.debugbutton"   
+    bl_label = "Debug"
+    def execute(self, context):     
+        appendobject(bpy.context.view_layer.objects.active)
+        print(len(bpy.context.scene.tracked_objects))     
+        for o in tracked_objects:
+            print(o)      
+        return {'FINISHED'}        
     
 class PANEL_PT_FBXLinkerSubPanelDynamic(bpy.types.Panel):     
     bl_label = "Link status"
     bl_idname = "PANEL_PT_FBXLinkerSubPanelDynamic"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
-    bl_category = "FBXLinker"   
+    bl_category = "Linker"   
     @classmethod
     def poll(cls, context):
         if (context.active_object != None):
@@ -235,7 +256,7 @@ class PANEL_PT_FBXLinkerMenu(bpy.types.Panel):
     bl_idname = "OBJECT_PT_FBXLinkerMenu"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "FBXLinker"
+    bl_category = "Linker"
     
     def draw(self, context):        
         layout = self.layout        
@@ -243,19 +264,22 @@ class PANEL_PT_FBXLinkerMenu(bpy.types.Panel):
         boxLink = self.layout.box() 
         boxLink.label(text="Link files")  
         boxLink.operator("open.browser", icon="FILE_FOLDER", text="")
-        boxLink.operator("fbxlinker.linkbutton", text=bpy.context.scene.syncbuttonname)     
+        boxLink.operator("fbxlinker.linkbutton", text=bpy.context.scene.syncbuttonname)   
+        boxLink.operator("fbxlinker.debugbutton")  
         
 classes =(
 PANEL_PT_FBXLinkerMenu,
 Open_OT_OpenBrowser,
 OBJECT_OT_HeartBeat,
 OBJECT_OT_LinkButton,
+OBJECT_OT_DebugButton,
 OBJECT_OT_SingleLinkButton,
 PANEL_PT_FBXLinkerSubPanelDynamic,
 )            
 
 register, unregister = bpy.utils.register_classes_factory(classes) 
 
+registerprops()
+
 if __name__ == "__main__":
-    registerprops()
     register()
