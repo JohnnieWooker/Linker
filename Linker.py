@@ -217,7 +217,8 @@ def togglelink(self):
 class Open_OT_OpenBrowser(bpy.types.Operator):
         bl_idname = "open.browser"
         bl_label = "Choose FBX to link"
-        filepath: bpy.props.StringProperty(subtype="DIR_PATH") 
+        filepath: bpy.props.StringProperty(subtype="FILE_PATH", default="*.obj;*;*.fbx",
+        options={'HIDDEN'},) 
         #somewhere to remember the address of the file
 
         def execute(self, context):
