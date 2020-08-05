@@ -17,8 +17,7 @@ bl_info = {
     "category" : "Object",
     }
    
-tracked_objects=[]    
-supported_types=['MESH']         
+tracked_objects=[]           
 
 class LinkerVariables(bpy.types.PropertyGroup):
     object = bpy.props.PointerProperty(name="object", type=bpy.types.Object)    
@@ -71,7 +70,11 @@ def load_handler(dummy):
 bpy.app.handlers.load_post.append(load_handler)     
     
 def importfbx(filepath):
-    bpy.ops.import_scene.fbx( filepath = filepath)
+    extension=filepath[(len(filepath)-3):]
+    if (extension.lower()=="fbx"):
+        bpy.ops.import_scene.fbx(filepath = filepath)
+    if (extension.lower()=="obj"): 
+        bpy.ops.import_scene.obj(filepath = filepath)   
     time=os.path.getmtime(filepath)
     index=0
     for obj in bpy.context.selected_objects:
