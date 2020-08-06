@@ -62,6 +62,23 @@ def removeobject(obj):
             bpy.context.scene.tracked_objects.remove(counter)    
         counter=counter+1
 
+class LinkerDeleteOverride(bpy.types.Operator):
+    """delete objects and their derivatives"""
+    bl_idname = "object.delete"
+    bl_label = "Delete"
+
+    @classmethod
+    def poll(cls, context):
+        return context.selected_objects is not None
+    
+    def execute(self, context):
+        for obj in context.selected_objects:
+            removeobject(obj)
+            bpy.data.objects.remove(obj)
+        return {'FINISHED'}
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
 @persistent
 def load_handler(dummy):
     bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT')
@@ -77,13 +94,15 @@ def importfbx(filepath):
         bpy.ops.import_scene.obj(filepath = filepath)   
     time=os.path.getmtime(filepath)
     index=0
-    for obj in bpy.context.selected_objects:
+    
+    for obj in bpy.context.selected_objects:        
         obj.tracking.linkpath=str(filepath)
         obj.tracking.linktime=str(time)
         obj.tracking.linkid=index
         obj.tracking.tracked=True
         index=index+1
-        appendobject(obj)     
+        appendobject(obj) 
+            
     
 def deldependancies(obj):
     linkpath=obj.tracking.linkpath
@@ -112,6 +131,11 @@ def get_indices_from_selection():
             indices.append(s.tracking.linkid)    
     return(indices)
     
+def compareobjects(obj):
+    for o in bpy.data.objects:
+        if o==obj: return True
+    return False  
+    
 class OBJECT_OT_HeartBeat(bpy.types.Operator):
     bl_idname = "fbxlinker.heartbeat"
     bl_label = "Heartbeat modal operator"
@@ -138,11 +162,17 @@ class OBJECT_OT_HeartBeat(bpy.types.Operator):
                 oldactiveindex=[]
                 object_to_merge=None
                 for on in bpy.context.scene.tracked_objects: 
-                    obj=on.object
+                    obj=None
                     try:
-                        o=obj.name
+                        obj=on.object                        
                     except:
-                        removeobject(obj) 
+                        pass    
+                    try:                        
+                        if not compareobjects(obj):
+                            removeobject(obj) 
+                            continue                         
+                    except Exception as e:
+                        removeobject(obj)                       
                         continue   
                     if (obj.tracking.tracked) and (not obj==None): 
                         path=obj.tracking.linkpath      
@@ -217,6 +247,24 @@ def togglelink(self):
             bpy.context.scene.linkstatusname="Linked" 
         else:
             self.report({'ERROR'}, 'File doesn\'t exists')    
+            
+def save():
+    oldselected=bpy.context.selected_objects
+    oldactive=bpy.context.view_layer.objects.active
+    filepath=bpy.context.view_layer.objects.active.tracking.linkpath
+    bpy.ops.object.select_all(action='DESELECT')
+    for on in bpy.context.scene.tracked_objects:
+        obj=on.object
+        if obj.tracking.linkpath==filepath:
+            obj.select_set(True)           
+    bpy.ops.export_scene.fbx(filepath=filepath,use_selection=True)
+    time=os.path.getmtime(filepath)
+    for obj in bpy.context.selected_objects:
+        obj.tracking.linktime=str(time)                   
+    bpy.ops.object.select_all(action='DESELECT')   
+    bpy.context.view_layer.objects.active=oldactive
+    for obj in oldselected:
+        obj.select_set(True)
     
 class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
         bl_idname = "open.browser"
@@ -230,7 +278,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
 
         def execute(self, context):
             importfbx(self.filepath)  
-            return bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT') 
+            #return bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT') 
             return {'FINISHED'}
 
         def invoke(self, context, event): # See comments at end  [1]
@@ -255,6 +303,13 @@ class OBJECT_OT_SingleLinkButton(bpy.types.Operator):
     def execute(self, context):        
         togglelink(self)
         return {'FINISHED'} 
+    
+class OBJECT_OT_SaveButton(bpy.types.Operator):    
+    bl_idname = "fbxlinker.savebutton"   
+    bl_label = "Save"
+    def execute(self, context):        
+        save()
+        return {'FINISHED'}     
        
 class OBJECT_OT_DebugButton(bpy.types.Operator):    
     bl_idname = "fbxlinker.debugbutton"   
@@ -275,17 +330,19 @@ class PANEL_PT_FBXLinkerSubPanelDynamic(bpy.types.Panel):
     @classmethod
     def poll(cls, context):
         if (context.active_object != None):
-            return bpy.context.view_layer.objects.active.tracking.tracked
+            return bpy.context.view_layer.objects.active!=None
         else: return False
     
     def draw(self, context):  
         row=self.layout.row()
         box = self.layout.box() 
-        box.row()
-        if istracked(bpy.context.view_layer.objects.active):
-            box.label(text=bpy.context.scene.linkstatusname)  
+        box.row()        
+        if istracked(bpy.context.view_layer.objects.active):  
+            box.label(text="Linked")            
             box.operator("fbxlinker.singlelinkbutton", text="Unlink") 
+            box.operator("fbxlinker.savebutton", text="Save")
         else:
+            box.label(text="Unlinked")  
             box.operator("fbxlinker.singlelinkbutton", text="Link")         
         box.label(text="path: "+bpy.context.view_layer.objects.active.tracking.linkpath)
         
@@ -312,7 +369,9 @@ Open_OT_OpenBrowser,
 OBJECT_OT_HeartBeat,
 OBJECT_OT_LinkButton,
 OBJECT_OT_DebugButton,
+OBJECT_OT_SaveButton,
 OBJECT_OT_SingleLinkButton,
+LinkerDeleteOverride,
 PANEL_PT_FBXLinkerSubPanelDynamic,
 )            
 
