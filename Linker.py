@@ -62,6 +62,13 @@ def removeobject(obj):
             bpy.context.scene.tracked_objects.remove(counter)    
         counter=counter+1
 
+def cleanlist():
+    counter=0
+    for o in bpy.context.scene.tracked_objects:
+        if o.object.name not in bpy.context.scene.objects:
+            bpy.context.scene.tracked_objects.remove(counter)
+        counter=counter+1    
+
 class LinkerDeleteOverride(bpy.types.Operator):
     """delete objects and their derivatives"""
     bl_idname = "object.delete"
@@ -233,29 +240,29 @@ class OBJECT_OT_HeartBeat(bpy.types.Operator):
         return {'RUNNING_MODAL'}        
     
 def togglelink(self):   
-    obj=bpy.context.view_layer.objects.active
-    if (istracked(obj)):
-        removeobject(obj)
-        bpy.context.scene.linkbuttonname="Link"
-        bpy.context.scene.linkstatusname="Unlinked"
-    else: 
-        path=obj.tracking.linkpath
-        if (os.path.isfile(path)):
-            appendobject(obj)
-            bpy.context.scene.linkbuttonname="Unlink"
-            bpy.context.scene.linkstatusname="Linked" 
-        else:
-            bpy.ops.fbxlinker.export('INVOKE_DEFAULT')    
+    for obj in bpy.context.selected_objects:
+        if (istracked(obj)):
+            removeobject(obj)
+            bpy.context.scene.linkbuttonname="Link"
+            bpy.context.scene.linkstatusname="Unlinked"
+        else: 
+            path=obj.tracking.linkpath
+            if (os.path.isfile(path)):
+                appendobject(obj)
+                bpy.context.scene.linkbuttonname="Unlink"
+                bpy.context.scene.linkstatusname="Linked" 
+            else:
+                bpy.ops.fbxlinker.export('INVOKE_DEFAULT')    
             
 def save():
     oldselected=bpy.context.selected_objects
     oldactive=bpy.context.view_layer.objects.active
-    filepath=bpy.context.view_layer.objects.active.tracking.linkpath
+    filepath=bpy.context.view_layer.objects.active.tracking.linkpath    
     bpy.ops.object.select_all(action='DESELECT')
-    for on in bpy.context.scene.tracked_objects:
+    for on in bpy.context.scene.tracked_objects:        
         obj=on.object
         if obj.tracking.linkpath==filepath:
-            obj.select_set(True)           
+            obj.select_set(True)
     bpy.ops.export_scene.fbx(filepath=filepath,use_selection=True)
     time=os.path.getmtime(filepath)
     for obj in bpy.context.selected_objects:
@@ -264,16 +271,31 @@ def save():
     bpy.context.view_layer.objects.active=oldactive
     for obj in oldselected:
         obj.select_set(True)
+        
     
 def exportfbx(filepath):
-    bpy.ops.export_scene.fbx(filepath=filepath,use_selection=True)      
+    bpy.ops.export_scene.fbx(filepath=filepath,use_selection=True)  
+    oldselection=bpy.context.selected_objects
+    oldactive=bpy.context.view_layer.objects.active
+    bpy.ops.object.select_all(action='DESELECT')   
     for obj in bpy.context.scene.tracked_objects:
-        if obj.object.tracking.linkpath==filepath:
-            bpy.ops.object.delete()
-            bpy.ops.object.select_all(action='DESELECT')
-            break
-    for obj in bpy.context.scene.tracked_objects:
-        obj.object.select_set(True)
+        if obj.object.tracking.linkpath==filepath and not obj.object in oldselection:
+            obj.object.select_set(True) 
+            bpy.context.view_layer.objects.active=obj.object
+            removeobject(obj.object)
+    bpy.ops.object.delete()        
+    time=os.path.getmtime(filepath)
+    index=0    
+    bpy.context.view_layer.objects.active=oldactive
+    for obj in oldselection: 
+        obj.select_set(True)        
+        obj.tracking.linkpath=str(filepath)
+        obj.tracking.linktime=str(time)
+        obj.tracking.linkid=index
+        obj.tracking.tracked=True
+        index=index+1
+        appendobject(obj)     
+        
     
 class Open_OT_Export(bpy.types.Operator):
         bl_idname = "fbxlinker.export"
@@ -282,6 +304,7 @@ class Open_OT_Export(bpy.types.Operator):
         #somewhere to remember the address of the file
 
         def execute(self, context):
+            cleanlist()  
             exportfbx(self.filepath)  
             #return bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT') 
             return {'FINISHED'}
@@ -305,6 +328,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
         #somewhere to remember the address of the file
 
         def execute(self, context):
+            cleanlist()  
             importfbx(self.filepath)  
             #return bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT') 
             return {'FINISHED'}
@@ -321,14 +345,16 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
 class OBJECT_OT_LinkButton(bpy.types.Operator):    
     bl_idname = "fbxlinker.linkbutton"   
     bl_label = "Start Sync"
-    def execute(self, context):        
+    def execute(self, context): 
+        cleanlist()
         return bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT') 
         return {'FINISHED'}
     
 class OBJECT_OT_SingleLinkButton(bpy.types.Operator):    
     bl_idname = "fbxlinker.singlelinkbutton"   
     bl_label = "Link"
-    def execute(self, context):        
+    def execute(self, context):   
+        cleanlist()     
         togglelink(self)
         return {'FINISHED'} 
     
@@ -336,17 +362,19 @@ class OBJECT_OT_SaveButton(bpy.types.Operator):
     bl_idname = "fbxlinker.savebutton"   
     bl_label = "Save"
     def execute(self, context):        
+        cleanlist()  
         save()
         return {'FINISHED'}     
        
 class OBJECT_OT_DebugButton(bpy.types.Operator):    
     bl_idname = "fbxlinker.debugbutton"   
     bl_label = "Debug"
-    def execute(self, context):     
+    def execute(self, context):
         #appendobject(bpy.context.view_layer.objects.active)
         print(len(bpy.context.scene.tracked_objects))     
         for o in bpy.context.scene.tracked_objects:
-            print(o)      
+            print(o)   
+        cleanlist()       
         return {'FINISHED'}        
     
 class PANEL_PT_FBXLinkerSubPanelDynamic(bpy.types.Panel):     
@@ -384,7 +412,7 @@ class PANEL_PT_FBXLinkerSubPanelDynamic(bpy.types.Panel):
             else:
                 box.operator("fbxlinker.export", text="Save as")  
         
-    
+   
 class PANEL_PT_FBXLinkerMenu(bpy.types.Panel):
     bl_label = "Linker"
     bl_idname = "OBJECT_PT_FBXLinkerMenu"
