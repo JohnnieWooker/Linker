@@ -427,7 +427,7 @@ class PANEL_PT_FBXLinkerMenu(bpy.types.Panel):
         boxLink.label(text="Link files")  
         boxLink.operator("open.browser", icon="FILE_FOLDER", text="")
         boxLink.operator("fbxlinker.linkbutton", text=bpy.context.scene.syncbuttonname)   
-        boxLink.operator("fbxlinker.debugbutton")  
+        #boxLink.operator("fbxlinker.debugbutton")  
         
 classes =(
 PANEL_PT_FBXLinkerMenu,
