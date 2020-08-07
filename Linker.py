@@ -102,7 +102,6 @@ def importfbx(filepath):
         obj.tracking.tracked=True
         index=index+1
         appendobject(obj) 
-            
     
 def deldependancies(obj):
     linkpath=obj.tracking.linkpath
@@ -121,7 +120,7 @@ def deldependancies(obj):
     for o in bpy.context.selected_objects:
         o.tracking.tracked=False
         removeobject(o)         
-    bpy.ops.object.delete(use_global=False)
+    bpy.ops.object.delete()
     bpy.ops.object.select_all(action='DESELECT')
     
 def get_indices_from_selection():
@@ -246,7 +245,7 @@ def togglelink(self):
             bpy.context.scene.linkbuttonname="Unlink"
             bpy.context.scene.linkstatusname="Linked" 
         else:
-            self.report({'ERROR'}, 'File doesn\'t exists')    
+            bpy.ops.fbxlinker.export('INVOKE_DEFAULT')    
             
 def save():
     oldselected=bpy.context.selected_objects
@@ -265,6 +264,35 @@ def save():
     bpy.context.view_layer.objects.active=oldactive
     for obj in oldselected:
         obj.select_set(True)
+    
+def exportfbx(filepath):
+    bpy.ops.export_scene.fbx(filepath=filepath,use_selection=True)      
+    for obj in bpy.context.scene.tracked_objects:
+        if obj.object.tracking.linkpath==filepath:
+            bpy.ops.object.delete()
+            bpy.ops.object.select_all(action='DESELECT')
+            break
+    for obj in bpy.context.scene.tracked_objects:
+        obj.object.select_set(True)
+    
+class Open_OT_Export(bpy.types.Operator):
+        bl_idname = "fbxlinker.export"
+        bl_label = "Choose export path"
+        filepath: bpy.props.StringProperty(subtype="FILE_PATH") 
+        #somewhere to remember the address of the file
+
+        def execute(self, context):
+            exportfbx(self.filepath)  
+            #return bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT') 
+            return {'FINISHED'}
+
+        def invoke(self, context, event): # See comments at end  [1]
+            context.window_manager.fileselect_add(self) 
+            #Open browser, take reference to 'self' 
+            #read the path to selected file, 
+            #put path in declared string type data structure self.filepath
+
+            return {'RUNNING_MODAL'}    
     
 class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
         bl_idname = "open.browser"
@@ -336,15 +364,25 @@ class PANEL_PT_FBXLinkerSubPanelDynamic(bpy.types.Panel):
     def draw(self, context):  
         row=self.layout.row()
         box = self.layout.box() 
-        box.row()        
-        if istracked(bpy.context.view_layer.objects.active):  
+        box.row() 
+        obj=bpy.context.view_layer.objects.active       
+        if istracked(obj):  
             box.label(text="Linked")            
             box.operator("fbxlinker.singlelinkbutton", text="Unlink") 
             box.operator("fbxlinker.savebutton", text="Save")
+            box.label(text="path: "+bpy.context.view_layer.objects.active.tracking.linkpath)
         else:
             box.label(text="Unlinked")  
-            box.operator("fbxlinker.singlelinkbutton", text="Link")         
-        box.label(text="path: "+bpy.context.view_layer.objects.active.tracking.linkpath)
+            path=""
+            try:
+                path=obj.tracking.linkpath
+            except:
+                pass    
+            if (os.path.isfile(path)):
+                box.operator("fbxlinker.singlelinkbutton", text="Link")
+                box.label(text="path: "+bpy.context.view_layer.objects.active.tracking.linkpath)
+            else:
+                box.operator("fbxlinker.export", text="Save as")  
         
     
 class PANEL_PT_FBXLinkerMenu(bpy.types.Panel):
@@ -366,6 +404,7 @@ class PANEL_PT_FBXLinkerMenu(bpy.types.Panel):
 classes =(
 PANEL_PT_FBXLinkerMenu,
 Open_OT_OpenBrowser,
+Open_OT_Export,
 OBJECT_OT_HeartBeat,
 OBJECT_OT_LinkButton,
 OBJECT_OT_DebugButton,
