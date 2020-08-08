@@ -2,11 +2,23 @@ import bpy
 import bpy_extras
 import os
 from bpy.app.handlers import persistent
+from struct import unpack
+import zlib
+import array
+import json
+
+_BLOCK_SIZE = 13
+_BLOCK_DATA = (b'\0' * _BLOCK_SIZE)
+_KAYDARA_HEADER = b'Kaydara FBX Binary\x20\x20\x00\x1a\x00'
+_IS_BIG_ENDIAN = (__import__("sys").byteorder != 'little')
+from collections import namedtuple
+FBXElem = namedtuple("FBXElem", ("id", "props", "props_type", "elems"))
+del namedtuple
 
 bl_info = {
     "name" : "Linker",
     "author" : "Lukasz Hoffmann",
-    "version" : (1, 0, 2),
+    "version" : (1, 0, 3),
     "blender" : (2, 80, 0),
     "location" : "View 3D > Object Mode > Tool Shelf",
     "description" :
@@ -18,6 +30,20 @@ bl_info = {
     }
    
 tracked_objects=[]           
+parsedobjects=[]
+parsedmaterials=[]
+
+class FBXMaterial:
+    name=""
+    guid=-1
+
+class FBXObject:
+    def __init__(self):
+        self.name=""
+        self.materials=[]
+        self.guid=-2
+    def addMaterial(self, material):   
+        self.materials.append(material)
 
 class LinkerVariables(bpy.types.PropertyGroup):
     object = bpy.props.PointerProperty(name="object", type=bpy.types.Object)    
@@ -93,6 +119,209 @@ def load_handler(dummy):
 
 bpy.app.handlers.load_post.append(load_handler)     
     
+def correctmats(): 
+    #find bloody way to determine the original material names
+    if len(bpy.context.selected_objects)>0:
+        path=bpy.context.selected_objects[0].tracking.linkpath
+        extension=path[(len(path)-3):]
+        if (extension.lower()=="fbx"):
+            parsematerials(path) 
+            for obj in bpy.context.selected_objects:
+                for fbxobj in parsedobjects:
+                    if (fbxobj.name==obj.name):
+                        for i in range(0,len(obj.data.materials)):                                                   
+                            if (fbxobj.materials[i] in bpy.data.materials):
+                                mat = bpy.data.materials.get(fbxobj.materials[i])
+                                print(mat)
+                                oldmat=obj.data.materials[i]
+                                if (mat.name!=oldmat.name):
+                                    obj.data.materials[i] = mat
+                                    bpy.data.materials.remove(oldmat)
+                                
+        if (extension.lower()=="obj"):
+            print("parsing obj")    
+    parsedobjects.clear()
+    parsedmaterials.clear()
+
+def read_uint(read):
+    return unpack(b'<I', read(4))[0]
+
+def read_ubyte(read):
+    return unpack(b'B', read(1))[0]
+
+read_data_dict = {
+    b'Y'[0]: lambda read: unpack(b'<h', read(2))[0],  # 16 bit int
+    b'C'[0]: lambda read: unpack(b'?', read(1))[0],   # 1 bit bool (yes/no)
+    b'I'[0]: lambda read: unpack(b'<i', read(4))[0],  # 32 bit int
+    b'F'[0]: lambda read: unpack(b'<f', read(4))[0],  # 32 bit float
+    b'D'[0]: lambda read: unpack(b'<d', read(8))[0],  # 64 bit float
+    b'L'[0]: lambda read: unpack(b'<q', read(8))[0],  # 64 bit int
+    b'R'[0]: lambda read: read(read_uint(read)),      # binary data
+    b'S'[0]: lambda read: read(read_uint(read)),      # string data
+    b'f'[0]: lambda read: unpack_array(read, 'f', 4, False),  # array (float)
+    b'i'[0]: lambda read: unpack_array(read, 'i', 4, True),   # array (int)
+    b'd'[0]: lambda read: unpack_array(read, 'd', 8, False),  # array (double)
+    b'l'[0]: lambda read: unpack_array(read, 'q', 8, True),   # array (long)
+    b'b'[0]: lambda read: unpack_array(read, 'b', 1, False),  # array (bool)
+    b'c'[0]: lambda read: unpack_array(read, 'B', 1, False),  # array (ubyte)
+}
+
+def unpack_array(read, array_type, array_stride, array_byteswap):
+    length = read_uint(read)
+    encoding = read_uint(read)
+    comp_len = read_uint(read)
+
+    data = read(comp_len)
+
+    if encoding == 0:
+        pass
+    elif encoding == 1:
+        data = zlib.decompress(data)
+
+    assert(length * array_stride == len(data))
+
+    data_array = array.array(array_type, data)
+    if array_byteswap and _IS_BIG_ENDIAN:
+        data_array.byteswap()
+    return data_array
+
+def read_string_ubyte(read):
+    size = read_ubyte(read)
+    data = read(size)
+    return data
+
+def read_elem(read, tell, use_namedtuple):
+    # [0] the offset at which this block ends
+    # [1] the number of properties in the scope
+    # [2] the length of the property list
+    end_offset = read_uint(read)
+    if end_offset == 0:
+        return None
+
+    prop_count = read_uint(read)
+    prop_length = read_uint(read)
+
+    elem_id = read_string_ubyte(read)
+    elem_props_type = bytearray(prop_count) 
+    elem_props_data = [None] * prop_count    
+    elem_subtree = []                        
+
+    for i in range(prop_count):
+        data_type = read(1)[0]
+        elem_props_data[i] = read_data_dict[data_type](read)
+        elem_props_type[i] = data_type
+
+    if tell() < end_offset:
+        while tell() < (end_offset - _BLOCK_SIZE):
+            elem_subtree.append(read_elem(read, tell, use_namedtuple))
+
+        if read(_BLOCK_SIZE) != _BLOCK_DATA:
+            raise IOError("failed to read nested block sentinel, "
+                          "expected all bytes to be 0")
+
+    if tell() != end_offset:
+        raise IOError("scope length not reached, "
+                      "something is wrong (%d)" % (end_offset - tell()))
+
+    args = (elem_id, elem_props_data, elem_props_type, elem_subtree)
+    return FBXElem(*args) if use_namedtuple else args
+
+def parse(fn, use_namedtuple=True):
+    root_elems = []
+    with open(fn, 'rb') as f:
+        read = f.read
+        tell = f.tell
+        if read(len(_KAYDARA_HEADER)) != _KAYDARA_HEADER:
+            raise IOError("Invalid header")
+        fbx_version = read_uint(read)
+        while True:
+            elem = read_elem(read, tell, use_namedtuple)
+            if elem is None:
+                break
+            root_elems.append(elem)
+    args = (b'', [], bytearray(0), root_elems)
+    return FBXElem(*args) if use_namedtuple else args, fbx_version
+
+data_types = type(array)("data_types")
+data_types.__dict__.update(
+    dict(
+        INT16=b'Y'[0],
+        BOOL=b'C'[0],
+        INT32=b'I'[0],
+        FLOAT32=b'F'[0],
+        FLOAT64=b'D'[0],
+        INT64=b'L'[0],
+        BYTES=b'R'[0],
+        STRING=b'S'[0],
+        FLOAT32_ARRAY=b'f'[0],
+        INT32_ARRAY=b'i'[0],
+        FLOAT64_ARRAY=b'd'[0],
+        INT64_ARRAY=b'l'[0],
+        BOOL_ARRAY=b'b'[0],
+        BYTE_ARRAY=b'c'[0],
+    ))
+
+# pyfbx.parse_bin
+parse_bin = type(array)("parse_bin")
+parse_bin.__dict__.update(
+    dict(
+        parse=parse
+    ))
+
+def fbx2json_property_as_string(prop, prop_type):
+    if prop_type == data_types.STRING:
+        prop_str = prop.decode('utf-8')
+        prop_str = prop_str.replace('\x00\x01', '::')
+        return json.dumps(prop_str)
+    else:
+        prop_py_type = type(prop)
+        if prop_py_type == bytes:
+            return json.dumps(repr(prop)[2:-1])
+        elif prop_py_type == bool:
+            return json.dumps(prop)
+        elif prop_py_type == array.array:
+            return repr(list(prop))
+
+    return repr(prop)
+
+def fbx2json_properties_as_string(fbx_elem):        
+    return ",".join(fbx2json_property_as_string(*prop_item) for prop_item in zip(fbx_elem.props,fbx_elem.props_type))
+
+def fbx2json_recurse(fbx_elem, is_last):
+    fbx_elem_id = fbx_elem.id.decode('utf-8')
+    if (fbx_elem_id=="Model"):
+        model=FBXObject()
+        line=fbx2json_properties_as_string(fbx_elem)
+        model.guid=line[:line.index(",")]
+        model.name=line[line.index(",\"")+2:line.index("::Model")]
+        parsedobjects.append(model)
+    if (fbx_elem_id=="Material"):
+        material=FBXMaterial()
+        line=line=fbx2json_properties_as_string(fbx_elem)
+        material.guid=line[:line.index(",")]
+        material.name=line[line.index(",\"")+2:line.index("::Material")]
+        parsedmaterials.append(material)
+    if (fbx_elem_id=="C"):     
+        line=line=fbx2json_properties_as_string(fbx_elem)
+        leftline=line[(line.index("\",")+2):]
+        mguid=leftline[:leftline.index(",")]
+        oguid=leftline[(leftline.index(",")+1):]
+        for o in parsedobjects:
+            if o.guid==oguid: 
+                for m in parsedmaterials:
+                    if m.guid==mguid:
+                        o.addMaterial(m.name)                                           
+        
+    if fbx_elem.elems:
+        for fbx_elem_sub in fbx_elem.elems:
+            fbx2json_recurse(fbx_elem_sub,fbx_elem_sub is fbx_elem.elems[-1])
+
+def parsematerials(fn):
+    fn_json = "%s.json" % os.path.splitext(fn)[0]
+    fbx_root_elem, fbx_version = parse(fn, use_namedtuple=True)    
+    for fbx_elem_sub in fbx_root_elem.elems:
+        fbx2json_recurse(fbx_elem_sub,fbx_elem_sub is fbx_root_elem.elems[-1]) 
+    
 def importfbx(filepath):
     extension=filepath[(len(filepath)-3):]
     if (extension.lower()=="fbx"):
@@ -109,6 +338,7 @@ def importfbx(filepath):
         obj.tracking.tracked=True
         index=index+1
         appendobject(obj) 
+    correctmats()        
     
 def deldependancies(obj):
     linkpath=obj.tracking.linkpath
@@ -370,11 +600,7 @@ class OBJECT_OT_DebugButton(bpy.types.Operator):
     bl_idname = "fbxlinker.debugbutton"   
     bl_label = "Debug"
     def execute(self, context):
-        #appendobject(bpy.context.view_layer.objects.active)
-        print(len(bpy.context.scene.tracked_objects))     
-        for o in bpy.context.scene.tracked_objects:
-            print(o)   
-        cleanlist()       
+        correctmats()
         return {'FINISHED'}        
     
 class PANEL_PT_FBXLinkerSubPanelDynamic(bpy.types.Panel):     
