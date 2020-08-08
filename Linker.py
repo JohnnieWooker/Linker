@@ -18,7 +18,7 @@ del namedtuple
 bl_info = {
     "name" : "Linker",
     "author" : "Lukasz Hoffmann",
-    "version" : (1, 0, 2),
+    "version" : (1, 0, 3),
     "blender" : (2, 80, 0),
     "location" : "View 3D > Object Mode > Tool Shelf",
     "description" :
@@ -121,9 +121,27 @@ bpy.app.handlers.load_post.append(load_handler)
     
 def correctmats(): 
     #find bloody way to determine the original material names
-    for obj in bpy.context.selected_objects:
-        for m in obj.data.materials:
-            print(m)
+    if len(bpy.context.selected_objects)>0:
+        path=bpy.context.selected_objects[0].tracking.linkpath
+        extension=path[(len(path)-3):]
+        if (extension.lower()=="fbx"):
+            parsematerials(path) 
+            for obj in bpy.context.selected_objects:
+                for fbxobj in parsedobjects:
+                    if (fbxobj.name==obj.name):
+                        for i in range(0,len(obj.data.materials)):                                                   
+                            if (fbxobj.materials[i] in bpy.data.materials):
+                                mat = bpy.data.materials.get(fbxobj.materials[i])
+                                print(mat)
+                                oldmat=obj.data.materials[i]
+                                if (mat.name!=oldmat.name):
+                                    obj.data.materials[i] = mat
+                                    bpy.data.materials.remove(oldmat)
+                                
+        if (extension.lower()=="obj"):
+            print("parsing obj")    
+    parsedobjects.clear()
+    parsedmaterials.clear()
 
 def read_uint(read):
     return unpack(b'<I', read(4))[0]
@@ -582,14 +600,7 @@ class OBJECT_OT_DebugButton(bpy.types.Operator):
     bl_idname = "fbxlinker.debugbutton"   
     bl_label = "Debug"
     def execute(self, context):
-        parsematerials("C:/GitHub/Linker/Linker/test.fbx") 
-        for o in parsedobjects:
-            print(o.name)
-            print(o.guid)
-            materials=""
-            for o in o.materials:
-                materials=materials+o+","
-            print(materials)    
+        correctmats()
         return {'FINISHED'}        
     
 class PANEL_PT_FBXLinkerSubPanelDynamic(bpy.types.Panel):     
@@ -642,7 +653,7 @@ class PANEL_PT_FBXLinkerMenu(bpy.types.Panel):
         boxLink.label(text="Link files")  
         boxLink.operator("open.browser", icon="FILE_FOLDER", text="")
         boxLink.operator("fbxlinker.linkbutton", text=bpy.context.scene.syncbuttonname)   
-        boxLink.operator("fbxlinker.debugbutton")  
+        #boxLink.operator("fbxlinker.debugbutton")  
         
 classes =(
 PANEL_PT_FBXLinkerMenu,
