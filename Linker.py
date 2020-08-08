@@ -30,6 +30,20 @@ bl_info = {
     }
    
 tracked_objects=[]           
+parsedobjects=[]
+parsedmaterials=[]
+
+class FBXMaterial:
+    name=""
+    guid=-1
+
+class FBXObject:
+    def __init__(self):
+        self.name=""
+        self.materials=[]
+        self.guid=-2
+    def addMaterial(self, material):   
+        self.materials.append(material)
 
 class LinkerVariables(bpy.types.PropertyGroup):
     object = bpy.props.PointerProperty(name="object", type=bpy.types.Object)    
@@ -257,8 +271,29 @@ def fbx2json_properties_as_string(fbx_elem):
 
 def fbx2json_recurse(fbx_elem, is_last):
     fbx_elem_id = fbx_elem.id.decode('utf-8')
-    if (fbx_elem_id=="Material" or fbx_elem_id=="Model" or fbx_elem_id=="C"):
-        print(fbx2json_properties_as_string(fbx_elem))
+    if (fbx_elem_id=="Model"):
+        model=FBXObject()
+        line=fbx2json_properties_as_string(fbx_elem)
+        model.guid=line[:line.index(",")]
+        model.name=line[line.index(",\"")+2:line.index("::Model")]
+        parsedobjects.append(model)
+    if (fbx_elem_id=="Material"):
+        material=FBXMaterial()
+        line=line=fbx2json_properties_as_string(fbx_elem)
+        material.guid=line[:line.index(",")]
+        material.name=line[line.index(",\"")+2:line.index("::Material")]
+        parsedmaterials.append(material)
+    if (fbx_elem_id=="C"):     
+        line=line=fbx2json_properties_as_string(fbx_elem)
+        leftline=line[(line.index("\",")+2):]
+        mguid=leftline[:leftline.index(",")]
+        oguid=leftline[(leftline.index(",")+1):]
+        for o in parsedobjects:
+            if o.guid==oguid: 
+                for m in parsedmaterials:
+                    if m.guid==mguid:
+                        o.addMaterial(m.name)                                           
+        
     if fbx_elem.elems:
         for fbx_elem_sub in fbx_elem.elems:
             fbx2json_recurse(fbx_elem_sub,fbx_elem_sub is fbx_elem.elems[-1])
@@ -548,6 +583,13 @@ class OBJECT_OT_DebugButton(bpy.types.Operator):
     bl_label = "Debug"
     def execute(self, context):
         parsematerials("C:/GitHub/Linker/Linker/test.fbx") 
+        for o in parsedobjects:
+            print(o.name)
+            print(o.guid)
+            materials=""
+            for o in o.materials:
+                materials=materials+o+","
+            print(materials)    
         return {'FINISHED'}        
     
 class PANEL_PT_FBXLinkerSubPanelDynamic(bpy.types.Panel):     
