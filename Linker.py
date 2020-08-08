@@ -51,14 +51,14 @@ class LinkerVariables(bpy.types.PropertyGroup):
 class TrackingSettings(bpy.types.PropertyGroup):
     linkid = bpy.props.IntProperty()
     linktime = bpy.props.StringProperty()
-    linkpath = bpy.props.StringProperty()
+    linkpath = bpy.props.StringProperty(default="")
     tracked=bpy.props.BoolProperty(default=False)
      
 def registerprops():  
     bpy.utils.register_class(LinkerVariables)
     bpy.types.Scene.tracked_objects = bpy.props.CollectionProperty(type = LinkerVariables)    
     bpy.utils.register_class(TrackingSettings)
-    #bpy.context.scene.tracked_objects.clear()
+    bpy.context.scene.tracked_objects.clear()
     bpy.types.Object.tracking = bpy.props.PointerProperty(type=TrackingSettings)
     bpy.types.Scene.temp_date = bpy.props.StringProperty \
     (
@@ -129,14 +129,18 @@ def correctmats():
             for obj in bpy.context.selected_objects:
                 for fbxobj in parsedobjects:
                     if (fbxobj.name==obj.name):
+                        print(obj.name)
                         for i in range(0,len(obj.data.materials)):                                                   
-                            if (fbxobj.materials[i] in bpy.data.materials):
+                            if (fbxobj.materials[i] in bpy.data.materials):                                
                                 mat = bpy.data.materials.get(fbxobj.materials[i])
-                                print(mat)
                                 oldmat=obj.data.materials[i]
-                                if (mat.name!=oldmat.name):
-                                    obj.data.materials[i] = mat
-                                    bpy.data.materials.remove(oldmat)
+                                if (oldmat!=None):
+                                    if (mat.name!=oldmat.name):
+                                        obj.data.materials[i] = mat
+                                        bpy.data.materials.remove(oldmat)
+                                else:
+                                    obj.data.materials[i] = mat        
+    
                                 
         if (extension.lower()=="obj"):
             print("parsing obj")    
