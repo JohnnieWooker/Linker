@@ -18,7 +18,7 @@ del namedtuple
 bl_info = {
     "name" : "Linker",
     "author" : "Lukasz Hoffmann",
-    "version" : (1, 0, 3),
+    "version" : (1, 0, 4),
     "blender" : (2, 80, 0),
     "location" : "View 3D > Object Mode > Tool Shelf",
     "description" :
@@ -58,7 +58,10 @@ def registerprops():
     bpy.utils.register_class(LinkerVariables)
     bpy.types.Scene.tracked_objects = bpy.props.CollectionProperty(type = LinkerVariables)    
     bpy.utils.register_class(TrackingSettings)
-    bpy.context.scene.tracked_objects.clear()
+    try:
+        bpy.context.scene.tracked_objects.clear()
+    except:
+        pass        
     bpy.types.Object.tracking = bpy.props.PointerProperty(type=TrackingSettings)
     bpy.types.Scene.temp_date = bpy.props.StringProperty \
     (
