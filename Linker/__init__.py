@@ -19,7 +19,7 @@ del namedtuple
 bl_info = {
     "name" : "Linker",
     "author" : "Lukasz Hoffmann",
-    "version" : (1, 0, 5),
+    "version" : (1, 0, 7),
     "blender" : (2, 80, 0),
     "location" : "View 3D > Object Mode > Tool Shelf",
     "description" :
@@ -166,6 +166,7 @@ def correctmats():
         path=bpy.context.selected_objects[0].tracking.linkpath
         extension=path[(len(path)-3):]
         if (extension.lower()=="fbx"):
+            print("parsing fbx") 
             parsematerials(path) 
             for obj in bpy.context.selected_objects:
                 for fbxobj in parsedobjects:
@@ -184,7 +185,8 @@ def correctmats():
     
                                 
         if (extension.lower()=="obj"):
-            print("parsing obj")    
+            print("parsing obj")
+            parseobjmats(path)    
     parsedobjects.clear()
     parsedmaterials.clear()
 
@@ -366,6 +368,10 @@ def parsematerials(fn):
     fbx_root_elem, fbx_version = parse(fn, use_namedtuple=True)    
     for fbx_elem_sub in fbx_root_elem.elems:
         fbx2json_recurse(fbx_elem_sub,fbx_elem_sub is fbx_root_elem.elems[-1]) 
+        
+def parseobjmats(path):
+    fn_json = "%s.json" % os.path.splitext(path)[0] 
+    print(fn_json) 
     
 def importfbx(filepath, OBJSettings, FBXSettings):
     extension=filepath[(len(filepath)-3):]
@@ -491,7 +497,7 @@ class OBJECT_OT_HeartBeat(bpy.types.Operator):
                 oldactiveindex=[]
                 object_to_merge=None
                 OBJSettings=OBJImportSettings()
-                FBXSettings=FBXSImportSettings()
+                FBXSettings=FBXImportSettings()
                 for on in bpy.context.scene.tracked_objects: 
                     obj=None
                     try:
