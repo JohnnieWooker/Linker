@@ -19,7 +19,7 @@ del namedtuple
 bl_info = {
     "name" : "Linker",
     "author" : "Lukasz Hoffmann",
-    "version" : (1, 0, 7),
+    "version" : (1, 0, 9),
     "blender" : (2, 80, 0),
     "location" : "View 3D > Object Mode > Tool Shelf",
     "description" :
@@ -34,6 +34,21 @@ tracked_objects=[]
 parsedobjects=[]
 parsedmaterials=[]
 
+class MaterialContainter():
+    def __init__(self):
+        self.object=None
+        self.materials_blend=[]
+        self.materials_file=[]
+
+class ObjectContainer():
+    def __init__(self):
+        self.facemats=[]
+
+class facemat:
+    def __init__(self):
+        self.face_id=-1
+        self.material=None
+
 class OBJImportSettings:
     def __init__(self):
         self.imageSearch=True   
@@ -46,6 +61,7 @@ class OBJImportSettings:
         self.splitByObject=False
         self.splitByGroup=False
         self.polyGroups=False
+        self.reimportmaterials=False
         
 class FBXImportSettings:  
      def __init__(self):
@@ -67,6 +83,7 @@ class FBXImportSettings:
         self.autoBones=False
         self.primBoneAxis='-Y'
         self.secBoneAxis='X'
+        self.reimportmaterials=False
                                                   
 class FBXMaterial:
     name=""
@@ -111,6 +128,8 @@ def registerprops():
     bpy.types.Scene.linkbuttonname=bpy.props.StringProperty(name="Link button name", default="Link")
     bpy.types.Scene.linkstatusname=bpy.props.StringProperty(name="Link status name", default="Linked")
     bpy.types.Scene.isinsync=bpy.props.BoolProperty(name="isinsync", description="isinsync", default=False)        
+    bpy.types.Scene.savemat=bpy.props.BoolProperty(name="savemat", description="Save material", default=False)        
+    
     
 def appendobject(obj):
     item=bpy.context.scene.tracked_objects.add()
@@ -160,7 +179,7 @@ def load_handler(dummy):
 
 bpy.app.handlers.load_post.append(load_handler)     
     
-def correctmats(): 
+def correctmats(materialcontainers): 
     #find bloody way to determine the original material names
     if len(bpy.context.selected_objects)>0:
         path=bpy.context.selected_objects[0].tracking.linkpath
@@ -189,6 +208,8 @@ def correctmats():
             parseobjmats(path)    
     parsedobjects.clear()
     parsedmaterials.clear()
+    if (len(materialcontainers)>0):
+        RestoreMaterials(materialcontainers)
 
 def read_uint(read):
     return unpack(b'<I', read(4))[0]
@@ -370,10 +391,36 @@ def parsematerials(fn):
         fbx2json_recurse(fbx_elem_sub,fbx_elem_sub is fbx_root_elem.elems[-1]) 
         
 def parseobjmats(path):
-    fn_json = "%s.json" % os.path.splitext(path)[0] 
-    print(fn_json) 
+    correctmatnames=[]
+    correctmats=[]
+    objfile = open(path, 'r') 
+    lines = objfile.readlines()
+    for line in lines: 
+        if (line[:6]=="usemtl"):
+            correctmatnames.append(line[7:].strip())
+    for m in bpy.data.materials:  
+        for mn in correctmatnames:      
+            if m.name==mn:
+                correctmats.append(m)
+    for obj in bpy.context.selected_objects:
+        for i in range(0,len(obj.data.materials)):
+             if (obj.data.materials[i] in correctmats):  
+                 continue
+             else:
+                 oldmat=obj.data.materials[i]
+                 trimmedname=obj.data.materials[i].name
+                 trimmedname=trimmedname[:len(trimmedname)-4]
+                 for cm in correctmats:
+                     if trimmedname==cm.name:
+                         obj.data.materials[i] = cm
+                         try:
+                            bpy.data.materials.remove(oldmat)
+                         except:
+                             pass    
+             
     
-def importfbx(filepath, OBJSettings, FBXSettings):
+    
+def importfbx(materialcontainers,filepath, OBJSettings, FBXSettings):                  
     extension=filepath[(len(filepath)-3):]
     if (extension.lower()=="fbx"):
         bpy.ops.import_scene.fbx(filepath = filepath,
@@ -396,7 +443,7 @@ def importfbx(filepath, OBJSettings, FBXSettings):
         primary_bone_axis = FBXSettings.primBoneAxis,
         secondary_bone_axis = FBXSettings.secBoneAxis
         )
-    if (extension.lower()=="obj"): 
+    if (extension.lower()=="obj"):     
         bpy.ops.import_scene.obj(filepath = filepath, use_image_search=OBJSettings.imageSearch, use_smooth_groups=OBJSettings.smoothGroups, use_edges=OBJSettings.lines, global_clight_size=OBJSettings.clampSize, use_split_objects=OBJSettings.splitByObject, use_split_groups=OBJSettings.splitByGroup, use_groups_as_vgroups=OBJSettings.polyGroups, axis_forward =OBJSettings.forward, axis_up =OBJSettings.up)   
     time=os.path.getmtime(filepath)
     index=0
@@ -415,7 +462,8 @@ def importfbx(filepath, OBJSettings, FBXSettings):
         obj.tracking.OBJSettings.split=OBJSettings.split
         obj.tracking.OBJSettings.splitByObject=OBJSettings.splitByObject
         obj.tracking.OBJSettings.splitByGroup=OBJSettings.splitByGroup
-        obj.tracking.OBJSettings.polyGroups=OBJSettings.polyGroups        
+        obj.tracking.OBJSettings.polyGroups=OBJSettings.polyGroups      
+        obj.tracking.OBJSettings.reimportmaterials=OBJSettings.reimportmaterials  
         obj.tracking.FBXSettings.customNormals=FBXSettings.customNormals
         obj.tracking.FBXSettings.subdData=FBXSettings.subdData
         obj.tracking.FBXSettings.customProps=FBXSettings.customProps
@@ -434,10 +482,11 @@ def importfbx(filepath, OBJSettings, FBXSettings):
         obj.tracking.FBXSettings.autoBones=FBXSettings.autoBones
         obj.tracking.FBXSettings.primBoneAxis=FBXSettings.primBoneAxis
         obj.tracking.FBXSettings.secBoneAxis=FBXSettings.secBoneAxis
+        obj.tracking.FBXSettings.reimportmaterials=FBXSettings.reimportmaterials
         #print(obj.tracking.OBJSettings.lines)
         index=index+1
         appendobject(obj) 
-    correctmats()        
+    correctmats(materialcontainers)        
     
 def deldependancies(obj):
     linkpath=obj.tracking.linkpath
@@ -527,8 +576,28 @@ class OBJECT_OT_HeartBeat(bpy.types.Operator):
                         else: 
                             removeobject(obj)                    
                 if reimport: 
+                    #objectcontainers=[]
+                    '''
+                    if (bpy.context.scene.savemat):
+                        objectcontainers=findfacesmaterials(object_to_merge)
+                        '''
+                    materialcontainers=[]
+                    extension=path[(len(path)-3):]
+                    if (extension.lower()=="fbx"):
+                        if (not FBXSettings.reimportmaterials):
+                            materialcontainers=materialstosave(path)
+                    if (extension.lower()=="obj"): 
+                        if (not OBJSettings.reimportmaterials):
+                            materialcontainers=materialstosave(path)            
                     deldependancies(object_to_merge)
-                    importfbx(path,OBJSettings,FBXSettings) 
+                    importfbx(materialcontainers,path,OBJSettings,FBXSettings) 
+                    '''
+                    if (bpy.context.scene.savemat):
+                        for i in objectcontainers:
+                            print("number of faces: "+str(len(i.facemats)))
+                            print("test id: "+str(i.facemats[10].face_id))
+                            print("test mat: "+i.facemats[10].material.name)
+                            '''
                     bpy.ops.object.select_all(action='DESELECT') 
                     activedeleted=False
                     selectiondeleted=False  
@@ -570,6 +639,60 @@ class OBJECT_OT_HeartBeat(bpy.types.Operator):
         self._timer = wm.event_timer_add(1, window=context.window)
         wm.modal_handler_add(self)
         return {'RUNNING_MODAL'}        
+    
+def RestoreMaterials(materialcontainers):
+    #a tutaj powinno przywaracac material ale klasa moze wymagac przeprojektowania
+    counter=0
+    for o in materialcontainers:    
+        if (counter+1<=len(bpy.context.selected_objects)):  
+            for i in range (0,len(bpy.context.selected_objects[counter].data.materials)):
+                bpy.context.selected_objects[counter].data.materials[i]=o.materials_blend[i]
+        counter=counter+1    
+    
+def materialstosave(linkpath):
+    materialcontainers=[]
+    for onb in bpy.context.scene.tracked_objects:   
+        o=onb.object          
+        try:
+            on=o.name
+        except:            
+            continue      
+        if (str(o.tracking.linkpath)==str(linkpath)): 
+            try:                
+                materialcontainer=MaterialContainter()
+                materialcontainer.object=o
+                materialcontainer.materials_blend=o.data.materials
+                materialcontainers.append(materialcontainer)
+            except Exception as e:
+                print(e)
+                pass       
+    #tutaj naprawic cos bo zwraca zerowa liste
+    return materialcontainers   
+    
+def findfacesmaterials(objecttomerge):
+    linkpath=objecttomerge.tracking.linkpath
+    objectcontainers=[]
+    for onb in bpy.context.scene.tracked_objects:    
+        o=onb.object          
+        try:
+            on=o.name
+        except:            
+            continue      
+        if (str(o.tracking.linkpath)==str(linkpath)): 
+            try:
+                objectcontainer=ObjectContainer()
+                materialfaces=[]
+                for p in objecttomerge.data.polygons:
+                    facemat_instance=facemat()    
+                    facemat_instance.face_id=p.index
+                    facemat_instance.material=o.material_slots[p.material_index].material
+                    materialfaces.append(facemat_instance)
+                objectcontainer.facemats=materialfaces   
+                objectcontainers.append(objectcontainer) 
+            except:
+                pass  
+    
+    return objectcontainers    
     
 def togglelink(self):   
     for obj in bpy.context.selected_objects:
@@ -700,6 +823,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
         splitByObject=bpy.props.BoolProperty( name='Split by Object', description='Import OBJ Objects into Blender Objects.', default=True )
         splitByGroup=bpy.props.BoolProperty( name='Split by Group', description='Import OBJ Groups into Blender Objects.', default=False )
         polyGroups=bpy.props.BoolProperty( name='Poly Groups', description='Import OBJ groups as vertex groups.', default=False )
+        reimportmaterials=bpy.props.BoolProperty( name='Reimport materials', description='If unchecked it will prevent materials from reimporting.', default=True )
         
         fbxCustomNormals=bpy.props.BoolProperty( name='Custom Normals', description='Import custom normas, if available (otherwise Blender will recompute them).', default=True )
         fbxSubdData=bpy.props.BoolProperty( name='Subdivision Data', description='Import FBX subdivision information as subdivision surface modifiers.', default=False )
@@ -740,6 +864,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
         fbxIgnoreLeafBones=bpy.props.BoolProperty( name='Ignore Leaf Bones', description='Ignore the las bone at the end of each chain (used to mark the length of the previous bone).', default=False )
         fbxForceConnected=bpy.props.BoolProperty( name='Force Connect Children', description='Force connection of children bones to their parent, even if their computed head/tail position do not match (can be useful with pure-joints-type armatures).', default=False )
         fbxAutoBones=bpy.props.BoolProperty( name='Automatic Bone Orientation', description='Try to align major bone axis with the bone children.', default=False )
+        fbxreimportmaterials=bpy.props.BoolProperty( name='Reimport materials', description='If unchecked it will prevent materials from reimporting.', default=True )
         fbxPrimBoneAxis=bpy.props.EnumProperty(
                     name='Primary Bone Axis',
                     description='Primary Bone Axis',
@@ -778,6 +903,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
                 includeBox.prop(self, 'imageSearch')
                 includeBox.prop(self, 'smoothGroups')
                 includeBox.prop(self, 'lines')
+                includeBox.prop(self, 'reimportmaterials')
                 transformBox = layout.box()
                 transformBox.label(text="Transform")
                 transformBox.prop(self, 'clampSize')
@@ -799,6 +925,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
                 includeBox.prop(self, 'fbxCustomProps')
                 includeBox.prop(self, 'fbxEnumAsStrings')
                 includeBox.prop(self, 'fbxImageSearch')
+                includeBox.prop(self, 'fbxreimportmaterials')
                 transformBox=layout.box()       
                 transformBox.label(text="Transform")  
                 transformBox.prop(self, 'fbxScale')   
@@ -843,6 +970,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
             OBJSettings.splitByObject=self.splitByObject
             OBJSettings.splitByGroup=self.splitByGroup
             OBJSettings.polyGroups=self.polyGroups
+            OBJSettings.reimportmaterials=self.reimportmaterials
             FBXSettings=FBXImportSettings()
             FBXSettings.customNormals=self.fbxCustomNormals
             FBXSettings.subdData=self.fbxSubdData
@@ -862,8 +990,9 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
             FBXSettings.autoBones=self.fbxAutoBones
             FBXSettings.primBoneAxis=self.fbxPrimBoneAxis
             FBXSettings.secBoneAxis=self.fbxSecBoneAxis
+            FBXSettings.reimportmaterials=self.fbxreimportmaterials
             
-            importfbx(self.filepath, OBJSettings, FBXSettings)  
+            importfbx([],self.filepath, OBJSettings, FBXSettings)  
             #return bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT') 
             return {'FINISHED'}
 
@@ -904,7 +1033,7 @@ class OBJECT_OT_DebugButton(bpy.types.Operator):
     bl_idname = "fbxlinker.debugbutton"   
     bl_label = "Debug"
     def execute(self, context):
-        correctmats()
+        print("test")
         return {'FINISHED'}        
     
 class PANEL_PT_FBXLinkerSubPanelDynamic(bpy.types.Panel):     
