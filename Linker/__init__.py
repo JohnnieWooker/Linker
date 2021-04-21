@@ -6,6 +6,8 @@ from struct import unpack
 import zlib
 import array
 import json
+import mathutils
+from mathutils import Vector
 
 _BLOCK_SIZE = 13
 _BLOCK_DATA = (b'\0' * _BLOCK_SIZE)
@@ -19,7 +21,7 @@ del namedtuple
 bl_info = {
     "name" : "Linker",
     "author" : "Lukasz Hoffmann",
-    "version" : (1, 1, 0),
+    "version" : (1, 1, 1),
     "blender" : (2, 80, 0),
     "location" : "View 3D > Object Mode > Tool Shelf",
     "description" :
@@ -63,6 +65,7 @@ class OBJImportSettings:
         self.polyGroups=False
         self.reimportmaterials=False
         self.reimportuvs=False
+        self.reimportposition=False
         
 class FBXImportSettings:  
      def __init__(self):
@@ -86,6 +89,7 @@ class FBXImportSettings:
         self.secBoneAxis='X'
         self.reimportmaterials=False
         self.reimportuvs=False
+        self.reimportposition=False
                                                   
 class FBXMaterial:
     name=""
@@ -100,13 +104,13 @@ class FBXObject:
         self.materials.append(material)
 
 class LinkerVariables(bpy.types.PropertyGroup):
-    object = bpy.props.PointerProperty(name="object", type=bpy.types.Object)    
+    object: bpy.props.PointerProperty(name="object", type=bpy.types.Object)    
 
 class TrackingSettings(bpy.types.PropertyGroup):
-    linkid = bpy.props.IntProperty()
-    linktime = bpy.props.StringProperty()
-    linkpath = bpy.props.StringProperty(default="")
-    tracked=bpy.props.BoolProperty(default=False)    
+    linkid: bpy.props.IntProperty()
+    linktime: bpy.props.StringProperty()
+    linkpath: bpy.props.StringProperty(default="")
+    tracked: bpy.props.BoolProperty(default=False)    
     filetype=""
     OBJSettings=OBJImportSettings()
     FBXSettings=FBXImportSettings()
@@ -424,7 +428,7 @@ def parseobjmats(path):
              
     
     
-def importfbx(materialcontainers,uvcontainers,filepath, OBJSettings, FBXSettings):                  
+def importfbx(materialcontainers,uvcontainers,positions,filepath, OBJSettings, FBXSettings):                  
     extension=filepath[(len(filepath)-3):]
     if (extension.lower()=="fbx"):
         bpy.ops.import_scene.fbx(filepath = filepath,
@@ -448,7 +452,17 @@ def importfbx(materialcontainers,uvcontainers,filepath, OBJSettings, FBXSettings
         secondary_bone_axis = FBXSettings.secBoneAxis
         )
     if (extension.lower()=="obj"):     
-        bpy.ops.import_scene.obj(filepath = filepath, use_image_search=OBJSettings.imageSearch, use_smooth_groups=OBJSettings.smoothGroups, use_edges=OBJSettings.lines, global_clight_size=OBJSettings.clampSize, use_split_objects=OBJSettings.splitByObject, use_split_groups=OBJSettings.splitByGroup, use_groups_as_vgroups=OBJSettings.polyGroups, axis_forward =OBJSettings.forward, axis_up =OBJSettings.up)   
+        bpy.ops.import_scene.obj(
+        filepath = filepath,
+        use_image_search=OBJSettings.imageSearch,
+        use_smooth_groups=OBJSettings.smoothGroups,
+        use_edges=OBJSettings.lines, 
+        global_clight_size=OBJSettings.clampSize, 
+        use_split_objects=OBJSettings.splitByObject, 
+        use_split_groups=OBJSettings.splitByGroup,
+        use_groups_as_vgroups=OBJSettings.polyGroups, 
+        axis_forward =OBJSettings.forward,
+        axis_up =OBJSettings.up)   
     time=os.path.getmtime(filepath)
     index=0
     
@@ -469,6 +483,7 @@ def importfbx(materialcontainers,uvcontainers,filepath, OBJSettings, FBXSettings
         obj.tracking.OBJSettings.polyGroups=OBJSettings.polyGroups      
         obj.tracking.OBJSettings.reimportmaterials=OBJSettings.reimportmaterials  
         obj.tracking.OBJSettings.reimportuvs=OBJSettings.reimportuvs 
+        obj.tracking.OBJSettings.reimportposition=OBJSettings.reimportposition 
         obj.tracking.FBXSettings.customNormals=FBXSettings.customNormals
         obj.tracking.FBXSettings.subdData=FBXSettings.subdData
         obj.tracking.FBXSettings.customProps=FBXSettings.customProps
@@ -489,12 +504,15 @@ def importfbx(materialcontainers,uvcontainers,filepath, OBJSettings, FBXSettings
         obj.tracking.FBXSettings.secBoneAxis=FBXSettings.secBoneAxis
         obj.tracking.FBXSettings.reimportmaterials=FBXSettings.reimportmaterials
         obj.tracking.FBXSettings.reimportuvs=FBXSettings.reimportuvs
+        obj.tracking.FBXSettings.reimportposition=FBXSettings.reimportposition
         #print(obj.tracking.OBJSettings.lines)
         index=index+1
         appendobject(obj) 
     correctmats(materialcontainers)       
     if (len(uvcontainers)>0):
         RestoreUVs(uvcontainers) 
+    if (len(positions)>0):
+        RestorePositions(positions)    
     
 def deldependancies(obj):
     linkpath=obj.tracking.linkpath
@@ -591,19 +609,24 @@ class OBJECT_OT_HeartBeat(bpy.types.Operator):
                         '''
                     materialcontainers=[]
                     uvcontainers=[]
+                    positions=[]
                     extension=path[(len(path)-3):]
                     if (extension.lower()=="fbx"):
                         if (not FBXSettings.reimportmaterials):
                             materialcontainers=materialstosave(path)
                         if (not FBXSettings.reimportuvs):    
                             uvcontainers=uvtosave(path)
+                        if (not FBXSettings.reimportposition):    
+                            positions=positionstosave(path)    
                     if (extension.lower()=="obj"): 
                         if (not OBJSettings.reimportmaterials):
                             materialcontainers=materialstosave(path)      
                         if (not OBJSettings.reimportuvs):  
-                            uvcontainers=uvtosave(path)      
+                            uvcontainers=uvtosave(path) 
+                        if (not OBJSettings.reimportposition):  
+                            positions=positionstosave(path)                
                     deldependancies(object_to_merge)
-                    importfbx(materialcontainers,uvcontainers,path,OBJSettings,FBXSettings) 
+                    importfbx(materialcontainers,uvcontainers,positions,path,OBJSettings,FBXSettings) 
                     '''
                     if (bpy.context.scene.savemat):
                         for i in objectcontainers:
@@ -677,6 +700,15 @@ def uvtosave(linkpath):
     for o in oldselected: o.select_set(True)
     bpy.context.view_layer.objects.active=oldactive     
     return uvcontainers
+
+def RestorePositions(positions):
+    counter=0
+    for o in positions:    
+        if (counter+1<=len(bpy.context.selected_objects)):  
+            print("old position: ")
+            print(o)
+            bpy.context.selected_objects[counter].location=o
+        counter=counter+1    
     
 def RestoreUVs(uvcontainers):
     counter=0
@@ -704,6 +736,30 @@ def RestoreMaterials(materialcontainers):
             for i in range (0,len(bpy.context.selected_objects[counter].data.materials)):
                 bpy.context.selected_objects[counter].data.materials[i]=o.materials_blend[i]
         counter=counter+1    
+    
+def positionstosave(linkpath):
+    positionstosave=[]
+    for onb in bpy.context.scene.tracked_objects:   
+        o=onb.object          
+        try:
+            on=o.name
+        except:            
+            continue      
+        if (str(o.tracking.linkpath)==str(linkpath)): 
+            try:                
+                print(o.location)
+                x=0
+                y=0
+                z=0
+                x=x+o.location.x
+                y=y+o.location.y
+                z=z+o.location.z
+                positionstosave.append(Vector((x,y,z)))
+            except Exception as e:
+                print(e)
+                pass       
+    #tutaj naprawic cos bo zwraca zerowa liste
+    return positionstosave       
     
 def materialstosave(linkpath):
     materialcontainers=[]
@@ -832,17 +888,17 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
         bl_idname = "open.browser"
         bl_label = "Choose FBX to link"
         bl_options={'PRESET'}
-        filter_glob = bpy.props.StringProperty(
+        filter_glob: bpy.props.StringProperty(
         default="*.obj;*.fbx",
         options={'HIDDEN'}
     )
         filepath: bpy.props.StringProperty(subtype="FILE_PATH") 
         #somewhere to remember the address of the file
-        imageSearch=bpy.props.BoolProperty( name='Image Search', description='Search subdirs for any associated images (Warning, may be slow).', default=True )
-        smoothGroups=bpy.props.BoolProperty( name='Smooth Groups', description='Surround smooth groups by sharp edges.', default=True )
-        lines=bpy.props.BoolProperty( name='Lines', description='Import lines and faces with 2 verts as edge.', default=True )
-        clampSize=bpy.props.FloatProperty( name='Clamp Size', description='Clamp bounds under this value (zero to disable).', default=0 )
-        forward=bpy.props.EnumProperty(
+        imageSearch: bpy.props.BoolProperty( name='Image Search', description='Search subdirs for any associated images (Warning, may be slow).', default=True )
+        smoothGroups: bpy.props.BoolProperty( name='Smooth Groups', description='Surround smooth groups by sharp edges.', default=True )
+        lines: bpy.props.BoolProperty( name='Lines', description='Import lines and faces with 2 verts as edge.', default=True )
+        clampSize: bpy.props.FloatProperty( name='Clamp Size', description='Clamp bounds under this value (zero to disable).', default=0 )
+        forward: bpy.props.EnumProperty(
                     name='Forward axis',
                     description='Forward axis',
                     items={
@@ -854,7 +910,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
                     ('-Z', '-Z Forward', '-Z')
                     },
                     default='-Z')
-        up=bpy.props.EnumProperty(
+        up: bpy.props.EnumProperty(
                     name='Up',
                     description='Up axis',
                     items={
@@ -866,7 +922,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
                     ('-Z', '-Z Up', '-Z')
                     },
                     default='Y') 
-        split = bpy.props.EnumProperty(
+        split: bpy.props.EnumProperty(
             name = "Split",
             description = "Split/Keep Vert Order",
             items = [
@@ -876,23 +932,24 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
             default={"Split"},
             options = {"ENUM_FLAG"}
         )            
-        splitByObject=bpy.props.BoolProperty( name='Split by Object', description='Import OBJ Objects into Blender Objects.', default=True )
-        splitByGroup=bpy.props.BoolProperty( name='Split by Group', description='Import OBJ Groups into Blender Objects.', default=False )
-        polyGroups=bpy.props.BoolProperty( name='Poly Groups', description='Import OBJ groups as vertex groups.', default=False )
-        reimportmaterials=bpy.props.BoolProperty( name='Reimport materials', description='If unchecked it will prevent materials from reimporting.', default=True )
-        reimportuvs=bpy.props.BoolProperty( name='Reimport UVs', description='If unchecked it will prevent UVs from reimporting, trying to match UVs from object on scene onto modeified models from file', default=True )
+        splitByObject: bpy.props.BoolProperty( name='Split by Object', description='Import OBJ Objects into Blender Objects.', default=True )
+        splitByGroup: bpy.props.BoolProperty( name='Split by Group', description='Import OBJ Groups into Blender Objects.', default=False )
+        polyGroups: bpy.props.BoolProperty( name='Poly Groups', description='Import OBJ groups as vertex groups.', default=False )
+        reimportmaterials: bpy.props.BoolProperty( name='Reimport materials', description='If unchecked it will prevent materials from reimporting.', default=True )
+        reimportuvs: bpy.props.BoolProperty( name='Reimport UVs', description='If unchecked it will prevent UVs from reimporting, trying to match UVs from object on scene onto modeified models from file', default=True )
+        reimportposition: bpy.props.BoolProperty( name='Reimport position', description='If unchecked it will prevent position from reimporting', default=True )
 
-        fbxCustomNormals=bpy.props.BoolProperty( name='Custom Normals', description='Import custom normas, if available (otherwise Blender will recompute them).', default=True )
-        fbxSubdData=bpy.props.BoolProperty( name='Subdivision Data', description='Import FBX subdivision information as subdivision surface modifiers.', default=False )
-        fbxCustomProps=bpy.props.BoolProperty( name='Custom Properties', description='Import user properties as custom properties.', default=True )
-        fbxEnumAsStrings=bpy.props.BoolProperty( name='Import Enums As Strings', description='Stores enumeration values as strings.', default=True )
-        fbxImageSearch=bpy.props.BoolProperty( name='Image Search', description='Search subdirs for any associated images (WARNING: may be slow).', default=True )
-        fbxScale=bpy.props.FloatProperty( name='Scale', description='Scale.', default=1 )
-        fbxDecalOffset=bpy.props.FloatProperty( name='Decal Offset', description='Displace geometry of alpha meshes.', default=0 )
-        fbxApplyTransform=bpy.props.BoolProperty( name='Apply Transformz', description='Bake space transform into object, avoids getting unwanted rotations to objects when target space is not aligned with Blender\'s space (WARNING! experimental option, use at own risks, known broken with armatures/animations).', default=False )
-        fbxPrePostRot=bpy.props.BoolProperty( name='Use Pre/Post Rotation', description='Use pre/post rotation from FBX transform (you may have to disable that in some cases).', default=True )
-        fbxManualORient=bpy.props.BoolProperty( name='Manual Orientation', description='Specify orientation and scale, instead of using embedded data in FBX file.', default=False )
-        fbxforward=bpy.props.EnumProperty(
+        fbxCustomNormals: bpy.props.BoolProperty( name='Custom Normals', description='Import custom normas, if available (otherwise Blender will recompute them).', default=True )
+        fbxSubdData: bpy.props.BoolProperty( name='Subdivision Data', description='Import FBX subdivision information as subdivision surface modifiers.', default=False )
+        fbxCustomProps: bpy.props.BoolProperty( name='Custom Properties', description='Import user properties as custom properties.', default=True )
+        fbxEnumAsStrings: bpy.props.BoolProperty( name='Import Enums As Strings', description='Stores enumeration values as strings.', default=True )
+        fbxImageSearch: bpy.props.BoolProperty( name='Image Search', description='Search subdirs for any associated images (WARNING: may be slow).', default=True )
+        fbxScale: bpy.props.FloatProperty( name='Scale', description='Scale.', default=1 )
+        fbxDecalOffset: bpy.props.FloatProperty( name='Decal Offset', description='Displace geometry of alpha meshes.', default=0 )
+        fbxApplyTransform: bpy.props.BoolProperty( name='Apply Transformz', description='Bake space transform into object, avoids getting unwanted rotations to objects when target space is not aligned with Blender\'s space (WARNING! experimental option, use at own risks, known broken with armatures/animations).', default=False )
+        fbxPrePostRot: bpy.props.BoolProperty( name='Use Pre/Post Rotation', description='Use pre/post rotation from FBX transform (you may have to disable that in some cases).', default=True )
+        fbxManualORient: bpy.props.BoolProperty( name='Manual Orientation', description='Specify orientation and scale, instead of using embedded data in FBX file.', default=False )
+        fbxforward: bpy.props.EnumProperty(
                     name='Forward axis',
                     description='Forward axis',
                     items={
@@ -904,7 +961,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
                     ('-Z', '-Z Forward', '-Z')
                     },
                     default='-Z')
-        fbxup=bpy.props.EnumProperty(
+        fbxup:bpy.props.EnumProperty(
                     name='Up',
                     description='Up axis',
                     items={
@@ -916,14 +973,15 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
                     ('-Z', '-Z Up', '-Z')
                     },
                     default='Y')
-        fbxAnimation=bpy.props.BoolProperty( name='Animation', description='Import FBX animation.', default=True )
-        fbxAnimationOffset=bpy.props.FloatProperty( name='Animation Offset', description='Offset to apply to animation during import, in frames.', default=1 )
-        fbxIgnoreLeafBones=bpy.props.BoolProperty( name='Ignore Leaf Bones', description='Ignore the las bone at the end of each chain (used to mark the length of the previous bone).', default=False )
-        fbxForceConnected=bpy.props.BoolProperty( name='Force Connect Children', description='Force connection of children bones to their parent, even if their computed head/tail position do not match (can be useful with pure-joints-type armatures).', default=False )
-        fbxAutoBones=bpy.props.BoolProperty( name='Automatic Bone Orientation', description='Try to align major bone axis with the bone children.', default=False )
-        fbxreimportmaterials=bpy.props.BoolProperty( name='Reimport materials', description='If unchecked it will prevent materials from reimporting.', default=True )
-        fbxreimportuvs=bpy.props.BoolProperty( name='Reimport UVs', description='If unchecked it will prevent UVs from reimporting, trying to match UVs from object on scene onto modeified models from file.', default=True )
-        fbxPrimBoneAxis=bpy.props.EnumProperty(
+        fbxAnimation: bpy.props.BoolProperty( name='Animation', description='Import FBX animation.', default=True )
+        fbxAnimationOffset: bpy.props.FloatProperty( name='Animation Offset', description='Offset to apply to animation during import, in frames.', default=1 )
+        fbxIgnoreLeafBones: bpy.props.BoolProperty( name='Ignore Leaf Bones', description='Ignore the las bone at the end of each chain (used to mark the length of the previous bone).', default=False )
+        fbxForceConnected: bpy.props.BoolProperty( name='Force Connect Children', description='Force connection of children bones to their parent, even if their computed head/tail position do not match (can be useful with pure-joints-type armatures).', default=False )
+        fbxAutoBones: bpy.props.BoolProperty( name='Automatic Bone Orientation', description='Try to align major bone axis with the bone children.', default=False )
+        fbxreimportmaterials: bpy.props.BoolProperty( name='Reimport materials', description='If unchecked it will prevent materials from reimporting.', default=True )
+        fbxreimportuvs: bpy.props.BoolProperty( name='Reimport UVs', description='If unchecked it will prevent UVs from reimporting, trying to match UVs from object on scene onto modeified models from file.', default=True )
+        fbxreimportposition: bpy.props.BoolProperty( name='Reimport position', description='If unchecked it will prevent position from reimporting', default=True )
+        fbxPrimBoneAxis: bpy.props.EnumProperty(
                     name='Primary Bone Axis',
                     description='Primary Bone Axis',
                     items={
@@ -935,7 +993,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
                     ('-Z', '-Z Axis', '-Z')
                     },
                     default='Y')
-        fbxSecBoneAxis=bpy.props.EnumProperty(
+        fbxSecBoneAxis: bpy.props.EnumProperty(
                     name='Secondary Bone Axis',
                     description='Secondary Bone Axis',
                     items={
@@ -968,6 +1026,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
                 transformBox.prop(self, 'clampSize')
                 transformBox.prop(self, 'forward')
                 transformBox.prop(self, 'up')
+                transformBox.prop(self, 'reimportposition')
                 geometryBox = layout.box()
                 geometryBox.prop(self, 'split', expand=True)
                 if self.split=={'Split'}:
@@ -993,6 +1052,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
                 transformBox.prop(self, 'fbxApplyTransform') 
                 transformBox.prop(self, 'fbxPrePostRot') 
                 transformBox.prop(self, 'fbxManualORient')
+                transformBox.prop(self, 'fbxreimportposition')
                 transformBoxRow=transformBox.row()
                 transformBoxRow.prop(self, 'fbxforward')
                 transformBoxRow.enabled=self.fbxManualORient
@@ -1032,6 +1092,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
             OBJSettings.polyGroups=self.polyGroups
             OBJSettings.reimportmaterials=self.reimportmaterials
             OBJSettings.reimportuvs=self.reimportuvs
+            OBJSettings.reimportposition=self.reimportposition
             FBXSettings=FBXImportSettings()
             FBXSettings.customNormals=self.fbxCustomNormals
             FBXSettings.subdData=self.fbxSubdData
@@ -1053,8 +1114,9 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
             FBXSettings.secBoneAxis=self.fbxSecBoneAxis
             FBXSettings.reimportmaterials=self.fbxreimportmaterials
             FBXSettings.reimportuvs=self.reimportuvs
+            FBXSettings.reimportposition=self.fbxreimportposition
             
-            importfbx([],[],self.filepath, OBJSettings, FBXSettings)  
+            importfbx([],[],[],self.filepath, OBJSettings, FBXSettings)  
             #return bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT') 
             return {'FINISHED'}
 
