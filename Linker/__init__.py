@@ -21,7 +21,7 @@ del namedtuple
 bl_info = {
     "name" : "Linker",
     "author" : "Lukasz Hoffmann",
-    "version" : (1, 1, 1),
+    "version" : (1, 1, 2),
     "blender" : (2, 80, 0),
     "location" : "View 3D > Object Mode > Tool Shelf",
     "description" :
@@ -840,8 +840,26 @@ def save():
         obj.select_set(True)
         
     
-def exportfbx(filepath):
-    bpy.ops.export_scene.fbx(filepath=filepath,use_selection=True)  
+def exportfbx(filepath, OBJSettings,FBXSettings):
+    extension=filepath[(len(filepath)-3):]
+    if (extension.lower()=="fbx"):
+        bpy.ops.export_scene.fbx(filepath = filepath,
+        use_subsurf = FBXSettings.subdData,
+        use_custom_props  = FBXSettings.customProps,
+        global_scale = FBXSettings.scale,
+        bake_space_transform =  FBXSettings.applyTransform,
+        axis_forward = FBXSettings.forward,
+        axis_up = FBXSettings.up,
+        primary_bone_axis = FBXSettings.primBoneAxis,
+        secondary_bone_axis = FBXSettings.secBoneAxis
+        )
+    if (extension.lower()=="obj"):     
+        bpy.ops.export_scene.obj(
+        filepath = filepath,
+        use_smooth_groups=OBJSettings.smoothGroups,
+        use_edges=OBJSettings.lines, 
+        axis_forward =OBJSettings.forward,
+        axis_up =OBJSettings.up)   
     oldselection=bpy.context.selected_objects
     oldactive=bpy.context.view_layer.objects.active
     bpy.ops.object.select_all(action='DESELECT')   
@@ -860,19 +878,275 @@ def exportfbx(filepath):
         obj.tracking.linktime=str(time)
         obj.tracking.linkid=index
         obj.tracking.tracked=True
+        obj.tracking.OBJSettings.imageSearch=OBJSettings.imageSearch
+        obj.tracking.OBJSettings.smoothGroups=OBJSettings.smoothGroups
+        obj.tracking.OBJSettings.lines=OBJSettings.lines
+        obj.tracking.OBJSettings.clampSize=OBJSettings.clampSize
+        obj.tracking.OBJSettings.forward=OBJSettings.forward
+        obj.tracking.OBJSettings.up=OBJSettings.up
+        obj.tracking.OBJSettings.split=OBJSettings.split
+        obj.tracking.OBJSettings.splitByObject=OBJSettings.splitByObject
+        obj.tracking.OBJSettings.splitByGroup=OBJSettings.splitByGroup
+        obj.tracking.OBJSettings.polyGroups=OBJSettings.polyGroups      
+        obj.tracking.OBJSettings.reimportmaterials=OBJSettings.reimportmaterials  
+        obj.tracking.OBJSettings.reimportuvs=OBJSettings.reimportuvs 
+        obj.tracking.OBJSettings.reimportposition=OBJSettings.reimportposition 
+        obj.tracking.FBXSettings.customNormals=FBXSettings.customNormals
+        obj.tracking.FBXSettings.subdData=FBXSettings.subdData
+        obj.tracking.FBXSettings.customProps=FBXSettings.customProps
+        obj.tracking.FBXSettings.EnumAsStrings=FBXSettings.EnumAsStrings
+        obj.tracking.FBXSettings.imageSearch=FBXSettings.imageSearch
+        obj.tracking.FBXSettings.scale=FBXSettings.scale        
+        obj.tracking.FBXSettings.decalOffset=FBXSettings.decalOffset        
+        obj.tracking.FBXSettings.applyTransform=FBXSettings.applyTransform
+        obj.tracking.FBXSettings.usePrePostRot=FBXSettings.usePrePostRot
+        obj.tracking.FBXSettings.forward=FBXSettings.forward
+        obj.tracking.FBXSettings.up=FBXSettings.up
+        obj.tracking.FBXSettings.useAnim=FBXSettings.useAnim
+        obj.tracking.FBXSettings.animOffset=FBXSettings.animOffset        
+        obj.tracking.FBXSettings.ignoreLeafBones=FBXSettings.ignoreLeafBones
+        obj.tracking.FBXSettings.forceConnected=FBXSettings.forceConnected
+        obj.tracking.FBXSettings.autoBones=FBXSettings.autoBones
+        obj.tracking.FBXSettings.primBoneAxis=FBXSettings.primBoneAxis
+        obj.tracking.FBXSettings.secBoneAxis=FBXSettings.secBoneAxis
+        obj.tracking.FBXSettings.reimportmaterials=FBXSettings.reimportmaterials
+        obj.tracking.FBXSettings.reimportuvs=FBXSettings.reimportuvs
+        obj.tracking.FBXSettings.reimportposition=FBXSettings.reimportposition
         index=index+1
-        appendobject(obj)     
-        
+        appendobject(obj)         
     
-class Open_OT_Export(bpy.types.Operator):
+class Open_OT_Export(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
         bl_idname = "fbxlinker.export"
-        bl_label = "Choose export path"
+        bl_label = "Save as"
+        bl_options={'PRESET'}
+        filter_glob: bpy.props.StringProperty(
+        default="*.obj;*.fbx",
+        options={'HIDDEN'}
+        )
         filepath: bpy.props.StringProperty(subtype="FILE_PATH") 
         #somewhere to remember the address of the file
+        imageSearch: bpy.props.BoolProperty( name='Image Search', description='Search subdirs for any associated images (Warning, may be slow).', default=True )
+        smoothGroups: bpy.props.BoolProperty( name='Smooth Groups', description='Surround smooth groups by sharp edges.', default=True )
+        lines: bpy.props.BoolProperty( name='Lines', description='Import lines and faces with 2 verts as edge.', default=True )
+        clampSize: bpy.props.FloatProperty( name='Clamp Size', description='Clamp bounds under this value (zero to disable).', default=0 )
+        forward: bpy.props.EnumProperty(
+                    name='Forward axis',
+                    description='Forward axis',
+                    items={
+                    ('X', 'X Forward', 'X'),
+                    ('Y', 'Y Forward', 'Y'),
+                    ('Z', 'Z Forward', 'Z'),
+                    ('-X', '-X Forward', '-X'),
+                    ('-Y', '-Y Forward', '-Y'),
+                    ('-Z', '-Z Forward', '-Z')
+                    },
+                    default='-Z')
+        up: bpy.props.EnumProperty(
+                    name='Up',
+                    description='Up axis',
+                    items={
+                    ('X', 'X Up', 'X'),
+                    ('Y', 'Y Up', 'Y'),
+                    ('Z', 'Z Up', 'Z'),
+                    ('-X', '-X Up', '-X'),
+                    ('-Y', '-Y Up', '-Y'),
+                    ('-Z', '-Z Up', '-Z')
+                    },
+                    default='Y') 
+        split: bpy.props.EnumProperty(
+            name = "Split",
+            description = "Split/Keep Vert Order",
+            items = [
+                ("Split" , "Split" , "Split geometry, omits unused verts"),
+                ("Keep Vert Order", "Keep Vert Order", "Keep vertex order from file")
+            ],
+            default={"Split"},
+            options = {"ENUM_FLAG"}
+        )            
+        splitByObject: bpy.props.BoolProperty( name='Split by Object', description='Import OBJ Objects into Blender Objects.', default=True )
+        splitByGroup: bpy.props.BoolProperty( name='Split by Group', description='Import OBJ Groups into Blender Objects.', default=False )
+        polyGroups: bpy.props.BoolProperty( name='Poly Groups', description='Import OBJ groups as vertex groups.', default=False )
+        reimportmaterials: bpy.props.BoolProperty( name='Reimport materials', description='If unchecked it will prevent materials from reimporting.', default=True )
+        reimportuvs: bpy.props.BoolProperty( name='Reimport UVs', description='If unchecked it will prevent UVs from reimporting, trying to match UVs from object on scene onto modeified models from file', default=True )
+        reimportposition: bpy.props.BoolProperty( name='Reimport position', description='If unchecked it will prevent position from reimporting', default=True )
+
+        fbxCustomNormals: bpy.props.BoolProperty( name='Custom Normals', description='Import custom normas, if available (otherwise Blender will recompute them).', default=True )
+        fbxSubdData: bpy.props.BoolProperty( name='Subdivision Data', description='Import FBX subdivision information as subdivision surface modifiers.', default=False )
+        fbxCustomProps: bpy.props.BoolProperty( name='Custom Properties', description='Import user properties as custom properties.', default=True )
+        fbxEnumAsStrings: bpy.props.BoolProperty( name='Import Enums As Strings', description='Stores enumeration values as strings.', default=True )
+        fbxImageSearch: bpy.props.BoolProperty( name='Image Search', description='Search subdirs for any associated images (WARNING: may be slow).', default=True )
+        fbxScale: bpy.props.FloatProperty( name='Scale', description='Scale.', default=1 )
+        fbxDecalOffset: bpy.props.FloatProperty( name='Decal Offset', description='Displace geometry of alpha meshes.', default=0 )
+        fbxApplyTransform: bpy.props.BoolProperty( name='Apply Transformz', description='Bake space transform into object, avoids getting unwanted rotations to objects when target space is not aligned with Blender\'s space (WARNING! experimental option, use at own risks, known broken with armatures/animations).', default=False )
+        fbxPrePostRot: bpy.props.BoolProperty( name='Use Pre/Post Rotation', description='Use pre/post rotation from FBX transform (you may have to disable that in some cases).', default=True )
+        fbxManualORient: bpy.props.BoolProperty( name='Manual Orientation', description='Specify orientation and scale, instead of using embedded data in FBX file.', default=False )
+        fbxforward: bpy.props.EnumProperty(
+                    name='Forward axis',
+                    description='Forward axis',
+                    items={
+                    ('X', 'X Forward', 'X'),
+                    ('Y', 'Y Forward', 'Y'),
+                    ('Z', 'Z Forward', 'Z'),
+                    ('-X', '-X Forward', '-X'),
+                    ('-Y', '-Y Forward', '-Y'),
+                    ('-Z', '-Z Forward', '-Z')
+                    },
+                    default='-Z')
+        fbxup:bpy.props.EnumProperty(
+                    name='Up',
+                    description='Up axis',
+                    items={
+                    ('X', 'X Up', 'X'),
+                    ('Y', 'Y Up', 'Y'),
+                    ('Z', 'Z Up', 'Z'),
+                    ('-X', '-X Up', '-X'),
+                    ('-Y', '-Y Up', '-Y'),
+                    ('-Z', '-Z Up', '-Z')
+                    },
+                    default='Y')
+        fbxAnimation: bpy.props.BoolProperty( name='Animation', description='Import FBX animation.', default=True )
+        fbxAnimationOffset: bpy.props.FloatProperty( name='Animation Offset', description='Offset to apply to animation during import, in frames.', default=1 )
+        fbxIgnoreLeafBones: bpy.props.BoolProperty( name='Ignore Leaf Bones', description='Ignore the las bone at the end of each chain (used to mark the length of the previous bone).', default=False )
+        fbxForceConnected: bpy.props.BoolProperty( name='Force Connect Children', description='Force connection of children bones to their parent, even if their computed head/tail position do not match (can be useful with pure-joints-type armatures).', default=False )
+        fbxAutoBones: bpy.props.BoolProperty( name='Automatic Bone Orientation', description='Try to align major bone axis with the bone children.', default=False )
+        fbxreimportmaterials: bpy.props.BoolProperty( name='Reimport materials', description='If unchecked it will prevent materials from reimporting.', default=True )
+        fbxreimportuvs: bpy.props.BoolProperty( name='Reimport UVs', description='If unchecked it will prevent UVs from reimporting, trying to match UVs from object on scene onto modeified models from file.', default=True )
+        fbxreimportposition: bpy.props.BoolProperty( name='Reimport position', description='If unchecked it will prevent position from reimporting', default=True )
+        fbxPrimBoneAxis: bpy.props.EnumProperty(
+                    name='Primary Bone Axis',
+                    description='Primary Bone Axis',
+                    items={
+                    ('X', 'X Axis', 'X'),
+                    ('Y', 'Y Axis', 'Y'),
+                    ('Z', 'Z Axis', 'Z'),
+                    ('-X', '-X Axis', '-X'),
+                    ('-Y', '-Y Axis', '-Y'),
+                    ('-Z', '-Z Axis', '-Z')
+                    },
+                    default='Y')
+        fbxSecBoneAxis: bpy.props.EnumProperty(
+                    name='Secondary Bone Axis',
+                    description='Secondary Bone Axis',
+                    items={
+                    ('X', 'X Axis', 'X'),
+                    ('Y', 'Y Axis', 'Y'),
+                    ('Z', 'Z Axis', 'Z'),
+                    ('-X', '-X Axis', '-X'),
+                    ('-Y', '-Y Axis', '-Y'),
+                    ('-Z', '-Z Axis', '-Z')
+                    },
+                    default='X')
+
+        def draw(self, context):  
+            extension=""
+            try:
+                extension=self.filepath[-3:]
+            except:
+                pass    
+            if extension.lower()=="obj": 
+                layout = self.layout
+                includeBox=layout.box()
+                includeBox.label(text="Include")
+                includeBox.prop(self, 'imageSearch')
+                includeBox.prop(self, 'smoothGroups')
+                includeBox.prop(self, 'lines')
+                includeBox.prop(self, 'reimportmaterials')
+                includeBox.prop(self, 'reimportuvs')
+                transformBox = layout.box()
+                transformBox.label(text="Transform")
+                transformBox.prop(self, 'clampSize')
+                transformBox.prop(self, 'forward')
+                transformBox.prop(self, 'up')
+                transformBox.prop(self, 'reimportposition')
+                geometryBox = layout.box()
+                geometryBox.prop(self, 'split', expand=True)
+                if self.split=={'Split'}:
+                    geometryBox.prop(self, 'splitByObject')
+                    geometryBox.prop(self, 'splitByGroup')
+                if self.split=={'Keep Vert Order'}:    
+                    geometryBox.prop(self, 'polyGroups')
+            if extension.lower()=="fbx": 
+                layout = self.layout
+                includeBox=layout.box()
+                includeBox.label(text="Include") 
+                includeBox.prop(self, 'fbxCustomNormals')
+                includeBox.prop(self, 'fbxSubdData')
+                includeBox.prop(self, 'fbxCustomProps')
+                includeBox.prop(self, 'fbxEnumAsStrings')
+                includeBox.prop(self, 'fbxImageSearch')
+                includeBox.prop(self, 'fbxreimportmaterials')
+                includeBox.prop(self, 'fbxreimportuvs')
+                transformBox=layout.box()       
+                transformBox.label(text="Transform")  
+                transformBox.prop(self, 'fbxScale')   
+                transformBox.prop(self, 'fbxDecalOffset') 
+                transformBox.prop(self, 'fbxApplyTransform') 
+                transformBox.prop(self, 'fbxPrePostRot') 
+                transformBox.prop(self, 'fbxManualORient')
+                transformBox.prop(self, 'fbxreimportposition')
+                transformBoxRow=transformBox.row()
+                transformBoxRow.prop(self, 'fbxforward')
+                transformBoxRow.enabled=self.fbxManualORient
+                transformBoxRow=transformBox.row()
+                transformBoxRow.prop(self, 'fbxup')
+                transformBoxRow.enabled=self.fbxManualORient
+                AnimationBox=layout.box() 
+                AnimationBox.label(text="Animation") 
+                AnimationBox.prop(self, 'fbxAnimation') 
+                AnimationBoxRow = AnimationBox.row()
+                AnimationBoxRow.prop(self, 'fbxAnimationOffset')
+                AnimationBoxRow.enabled=self.fbxAnimation
+                ArmatureBox=layout.box()             
+                ArmatureBox.label(text="Armature")
+                ArmatureBox.prop(self, 'fbxIgnoreLeafBones') 
+                ArmatureBox.prop(self, 'fbxForceConnected') 
+                ArmatureBox.prop(self, 'fbxAutoBones') 
+                ArmatureBoxRow=ArmatureBox.row()
+                ArmatureBoxRow.prop(self, 'fbxPrimBoneAxis')
+                ArmatureBoxRow.enabled=not self.fbxAutoBones 
+                ArmatureBoxRow=ArmatureBox.row()                
+                ArmatureBoxRow.prop(self, 'fbxSecBoneAxis') 
+                ArmatureBoxRow.enabled=not self.fbxAutoBones
 
         def execute(self, context):
             cleanlist()  
-            exportfbx(self.filepath)  
+            OBJSettings=OBJImportSettings()
+            OBJSettings.imageSearch=self.imageSearch
+            OBJSettings.smoothGroups=self.smoothGroups
+            OBJSettings.lines=self.lines
+            OBJSettings.clampSize=self.clampSize
+            OBJSettings.forward=self.forward
+            OBJSettings.up=self.up
+            OBJSettings.split=self.split
+            OBJSettings.splitByObject=self.splitByObject
+            OBJSettings.splitByGroup=self.splitByGroup
+            OBJSettings.polyGroups=self.polyGroups
+            OBJSettings.reimportmaterials=self.reimportmaterials
+            OBJSettings.reimportuvs=self.reimportuvs
+            OBJSettings.reimportposition=self.reimportposition
+            FBXSettings=FBXImportSettings()
+            FBXSettings.customNormals=self.fbxCustomNormals
+            FBXSettings.subdData=self.fbxSubdData
+            FBXSettings.customProps=self.fbxCustomProps
+            FBXSettings.EnumAsStrings=self.fbxEnumAsStrings
+            FBXSettings.imageSearch=self.fbxImageSearch
+            FBXSettings.scale=self.fbxScale
+            FBXSettings.decalOffset=self.fbxDecalOffset
+            FBXSettings.applyTransform=self.fbxApplyTransform
+            FBXSettings.usePrePostRot=self.fbxPrePostRot
+            FBXSettings.forward=self.fbxforward
+            FBXSettings.up=self.fbxup
+            FBXSettings.useAnim=self.fbxAnimation
+            FBXSettings.animOffset=self.fbxAnimationOffset
+            FBXSettings.ignoreLeafBones=self.fbxIgnoreLeafBones
+            FBXSettings.forceConnected=self.fbxForceConnected
+            FBXSettings.autoBones=self.fbxAutoBones
+            FBXSettings.primBoneAxis=self.fbxPrimBoneAxis
+            FBXSettings.secBoneAxis=self.fbxSecBoneAxis
+            FBXSettings.reimportmaterials=self.fbxreimportmaterials
+            FBXSettings.reimportuvs=self.reimportuvs
+            FBXSettings.reimportposition=self.fbxreimportposition
+            exportfbx(self.filepath,OBJSettings,FBXSettings)  
             #return bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT') 
             return {'FINISHED'}
 
