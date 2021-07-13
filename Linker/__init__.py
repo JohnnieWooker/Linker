@@ -542,7 +542,7 @@ def parseobjmats(path):
                 
     
     
-def importfbx(materialcontainers,uvcontainers,positions,filepath, OBJSettings, FBXSettings):                  
+def importModel(materialcontainers,uvcontainers,positions,filepath, OBJSettings, FBXSettings):                  
     extension=filepath[(len(filepath)-3):]
     if (extension.lower()=="fbx"):
         bpy.ops.import_scene.fbx(filepath = filepath,
@@ -778,7 +778,7 @@ class OBJECT_OT_HeartBeat(bpy.types.Operator):
                         if (not OBJSettings.reimportposition):  
                             positions=positionstosave(path)                
                     deldependancies(object_to_merge)
-                    importfbx(materialcontainers,uvcontainers,positions,path,OBJSettings,FBXSettings) 
+                    importModel(materialcontainers,uvcontainers,positions,path,OBJSettings,FBXSettings) 
                     '''
                     if (bpy.context.scene.savemat):
                         for i in objectcontainers:
