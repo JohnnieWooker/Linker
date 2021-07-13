@@ -8,6 +8,7 @@ import array
 import json
 import mathutils
 from mathutils import Vector
+from typing import Type
 
 _BLOCK_SIZE = 13
 _BLOCK_DATA = (b'\0' * _BLOCK_SIZE)
@@ -21,7 +22,7 @@ del namedtuple
 bl_info = {
     "name" : "Linker",
     "author" : "Lukasz Hoffmann",
-    "version" : (1, 1, 2),
+    "version" : (1, 1, 3),
     "blender" : (2, 80, 0),
     "location" : "View 3D > Object Mode > Tool Shelf",
     "description" :
@@ -51,7 +52,7 @@ class facemat:
         self.face_id=-1
         self.material=None
 
-class OBJImportSettings:
+class OBJImportSettings():    
     def __init__(self):
         self.imageSearch=True   
         self.smoothGroups=True
@@ -64,9 +65,9 @@ class OBJImportSettings:
         self.splitByGroup=False
         self.polyGroups=False
         self.reimportmaterials=False
-        self.reimportuvs=False
+        self.reimportuvs= True
         self.reimportposition=False
-        
+
 class FBXImportSettings:  
      def __init__(self):
         self.customNormals=True  
@@ -111,14 +112,128 @@ class TrackingSettings(bpy.types.PropertyGroup):
     linktime: bpy.props.StringProperty()
     linkpath: bpy.props.StringProperty(default="")
     tracked: bpy.props.BoolProperty(default=False)    
-    filetype=""
     OBJSettings=OBJImportSettings()
     FBXSettings=FBXImportSettings()
+
+    OBJSettings_imageSearch: bpy.props.BoolProperty(default=True) 
+    OBJSettings_smoothGroups: bpy.props.BoolProperty(default=True) 
+    OBJSettings_lines: bpy.props.BoolProperty(default=True) 
+    OBJSettings_reimportuvs: bpy.props.BoolProperty(default=True) 
+    OBJSettings_splitByObject: bpy.props.BoolProperty(default=False) 
+    OBJSettings_splitByGroup: bpy.props.BoolProperty(default=False) 
+    OBJSettings_polyGroups: bpy.props.BoolProperty(default=False) 
+    OBJSettings_reimportmaterials: bpy.props.BoolProperty(default=False) 
+    OBJSettings_reimportposition: bpy.props.BoolProperty(default=False) 
+    OBJSettings_clampSize: bpy.props.IntProperty(default=0) 
+    OBJSettings_forward: bpy.props.EnumProperty(
+                        name='Forward axis',
+                        description='Forward axis',
+                        items={
+                        ('X', 'X Forward', 'X'),
+                        ('Y', 'Y Forward', 'Y'),
+                        ('Z', 'Z Forward', 'Z'),
+                        ('-X', '-X Forward', '-X'),
+                        ('-Y', '-Y Forward', '-Y'),
+                        ('-Z', '-Z Forward', '-Z')
+                        },
+                        default='-Z')
+
+    OBJSettings_up: bpy.props.EnumProperty(
+                        name='Up axis',
+                        description='Up axis',
+                        items={
+                        ('X', 'X Up', 'X'),
+                        ('Y', 'Y Up', 'Y'),
+                        ('Z', 'Z Up', 'Z'),
+                        ('-X', '-X Up', '-X'),
+                        ('-Y', '-Y Up', '-Y'),
+                        ('-Z', '-Z Up', '-Z')
+                        },
+                        default='Y')
+
+    OBJSettings_split: bpy.props.EnumProperty(
+                name = "Split",
+                description = "Split/Keep Vert Order",
+                items = [
+                    ("Split" , "Split" , "Split geometry, omits unused verts"),
+                    ("Keep Vert Order", "Keep Vert Order", "Keep vertex order from file")
+                ],
+                default={"Split"},
+                options = {"ENUM_FLAG"}
+            ) 
+
+    FBXSettings_customNormals:bpy.props.BoolProperty(default=True) 
+    FBXSettings_subdData:bpy.props.BoolProperty(default=False) 
+    FBXSettings_customProps:bpy.props.BoolProperty(default=True) 
+    FBXSettings_EnumAsStrings:bpy.props.BoolProperty(default=True) 
+    FBXSettings_imageSearch:bpy.props.BoolProperty(default=True) 
+    FBXSettings_scale: bpy.props.IntProperty(default=1) 
+    FBXSettings_decalOffset: bpy.props.IntProperty(default=0) 
+    FBXSettings_applyTransform:bpy.props.BoolProperty(default=False) 
+    FBXSettings_usePrePostRot:bpy.props.BoolProperty(default=True) 
+    FBXSettings_forward:bpy.props.EnumProperty(
+                    name='Forward axis',
+                    description='Forward axis',
+                    items={
+                    ('X', 'X Forward', 'X'),
+                    ('Y', 'Y Forward', 'Y'),
+                    ('Z', 'Z Forward', 'Z'),
+                    ('-X', '-X Forward', '-X'),
+                    ('-Y', '-Y Forward', '-Y'),
+                    ('-Z', '-Z Forward', '-Z')
+                    },
+                    default='-Z')
+    FBXSettings_up:bpy.props.EnumProperty(
+                    name='Up',
+                    description='Up axis',
+                    items={
+                    ('X', 'X Up', 'X'),
+                    ('Y', 'Y Up', 'Y'),
+                    ('Z', 'Z Up', 'Z'),
+                    ('-X', '-X Up', '-X'),
+                    ('-Y', '-Y Up', '-Y'),
+                    ('-Z', '-Z Up', '-Z')
+                    },
+                    default='Y')
+    FBXSettings_useAnim:bpy.props.BoolProperty(default=True) 
+    FBXSettings_animOffset:bpy.props.IntProperty(default=1)       
+    FBXSettings_ignoreLeafBones:bpy.props.BoolProperty(default=False) 
+    FBXSettings_forceConnected:bpy.props.BoolProperty(default=False) 
+    FBXSettings_autoBones:bpy.props.BoolProperty(default=False) 
+    FBXSettings_primBoneAxis:bpy.props.EnumProperty(
+                    name='Primary Bone Axis',
+                    description='Primary Bone Axis',
+                    items={
+                    ('X', 'X Axis', 'X'),
+                    ('Y', 'Y Axis', 'Y'),
+                    ('Z', 'Z Axis', 'Z'),
+                    ('-X', '-X Axis', '-X'),
+                    ('-Y', '-Y Axis', '-Y'),
+                    ('-Z', '-Z Axis', '-Z')
+                    },
+                    default='Y')
+    FBXSettings_secBoneAxis:bpy.props.EnumProperty(
+                    name='Secondary Bone Axis',
+                    description='Secondary Bone Axis',
+                    items={
+                    ('X', 'X Axis', 'X'),
+                    ('Y', 'Y Axis', 'Y'),
+                    ('Z', 'Z Axis', 'Z'),
+                    ('-X', '-X Axis', '-X'),
+                    ('-Y', '-Y Axis', '-Y'),
+                    ('-Z', '-Z Axis', '-Z')
+                    },
+                    default='X')				
+    FBXSettings_reimportmaterials:bpy.props.BoolProperty(default=False) 
+    FBXSettings_reimportuvs:bpy.props.BoolProperty(default=False) 
+    FBXSettings_reimportposition:bpy.props.BoolProperty(default=False) 
+
+    filetype=""    
      
 def registerprops():  
     bpy.utils.register_class(LinkerVariables)
     bpy.types.Scene.tracked_objects = bpy.props.CollectionProperty(type = LinkerVariables)    
-    bpy.utils.register_class(TrackingSettings)
+    bpy.utils.register_class(TrackingSettings)    
     try:
         bpy.context.scene.tracked_objects.clear()
     except:
@@ -194,20 +309,19 @@ def correctmats(materialcontainers):
             print("parsing fbx") 
             parsematerials(path) 
             for obj in bpy.context.selected_objects:
-                for fbxobj in parsedobjects:
-                    if (fbxobj.name==obj.name):
-                        print(obj.name)
-                        for i in range(0,len(obj.data.materials)):                                                   
-                            if (fbxobj.materials[i] in bpy.data.materials):                                
-                                mat = bpy.data.materials.get(fbxobj.materials[i])
-                                oldmat=obj.data.materials[i]
-                                if (oldmat!=None):
-                                    if (mat.name!=oldmat.name):
-                                        obj.data.materials[i] = mat
-                                        bpy.data.materials.remove(oldmat)
-                                else:
-                                    obj.data.materials[i] = mat        
-    
+                if (obj.type=='MESH'):
+                    for fbxobj in parsedobjects:
+                        if (fbxobj.name==obj.name):                        
+                            for i in range(0,len(obj.data.materials)):                                                   
+                                if (fbxobj.materials[i] in bpy.data.materials):                                
+                                    mat = bpy.data.materials.get(fbxobj.materials[i])
+                                    oldmat=obj.data.materials[i]
+                                    if (oldmat!=None):
+                                        if (mat.name!=oldmat.name):
+                                            obj.data.materials[i] = mat
+                                            bpy.data.materials.remove(oldmat)
+                                    else:
+                                        obj.data.materials[i] = mat            
                                 
         if (extension.lower()=="obj"):
             print("parsing obj")
@@ -410,22 +524,22 @@ def parseobjmats(path):
                 correctmats.append(m)
     for obj in bpy.context.selected_objects:
         for i in range(0,len(obj.data.materials)):
-             if (obj.data.materials[i] in correctmats):  
-                 continue
-             else:
-                 oldmat=obj.data.materials[i]
-                 trimmedname=""
-                 if (not obj.data.materials[i]==None):
-                     trimmedname=obj.data.materials[i].name
-                     trimmedname=trimmedname[:len(trimmedname)-4]
-                     for cm in correctmats:
-                         if trimmedname==cm.name:
-                             obj.data.materials[i] = cm
-                             try:
+            if (obj.data.materials[i] in correctmats):  
+                continue
+            else:
+                oldmat=obj.data.materials[i]
+                trimmedname=""
+                if (not obj.data.materials[i]==None):
+                    trimmedname=obj.data.materials[i].name
+                    trimmedname=trimmedname[:len(trimmedname)-4]
+                    for cm in correctmats:
+                        if trimmedname==cm.name:
+                            obj.data.materials[i] = cm
+                            try:
                                 bpy.data.materials.remove(oldmat)
-                             except:
-                                 pass    
-             
+                            except:
+                                pass    
+                
     
     
 def importfbx(materialcontainers,uvcontainers,positions,filepath, OBJSettings, FBXSettings):                  
@@ -457,7 +571,7 @@ def importfbx(materialcontainers,uvcontainers,positions,filepath, OBJSettings, F
         use_image_search=OBJSettings.imageSearch,
         use_smooth_groups=OBJSettings.smoothGroups,
         use_edges=OBJSettings.lines, 
-        global_clight_size=OBJSettings.clampSize, 
+        global_clamp_size=OBJSettings.clampSize, 
         use_split_objects=OBJSettings.splitByObject, 
         use_split_groups=OBJSettings.splitByGroup,
         use_groups_as_vgroups=OBJSettings.polyGroups, 
@@ -471,40 +585,42 @@ def importfbx(materialcontainers,uvcontainers,positions,filepath, OBJSettings, F
         obj.tracking.linktime=str(time)
         obj.tracking.linkid=index
         obj.tracking.tracked=True
-        obj.tracking.OBJSettings.imageSearch=OBJSettings.imageSearch
-        obj.tracking.OBJSettings.smoothGroups=OBJSettings.smoothGroups
-        obj.tracking.OBJSettings.lines=OBJSettings.lines
-        obj.tracking.OBJSettings.clampSize=OBJSettings.clampSize
-        obj.tracking.OBJSettings.forward=OBJSettings.forward
-        obj.tracking.OBJSettings.up=OBJSettings.up
-        obj.tracking.OBJSettings.split=OBJSettings.split
-        obj.tracking.OBJSettings.splitByObject=OBJSettings.splitByObject
-        obj.tracking.OBJSettings.splitByGroup=OBJSettings.splitByGroup
-        obj.tracking.OBJSettings.polyGroups=OBJSettings.polyGroups      
-        obj.tracking.OBJSettings.reimportmaterials=OBJSettings.reimportmaterials  
-        obj.tracking.OBJSettings.reimportuvs=OBJSettings.reimportuvs 
-        obj.tracking.OBJSettings.reimportposition=OBJSettings.reimportposition 
-        obj.tracking.FBXSettings.customNormals=FBXSettings.customNormals
-        obj.tracking.FBXSettings.subdData=FBXSettings.subdData
-        obj.tracking.FBXSettings.customProps=FBXSettings.customProps
-        obj.tracking.FBXSettings.EnumAsStrings=FBXSettings.EnumAsStrings
-        obj.tracking.FBXSettings.imageSearch=FBXSettings.imageSearch
-        obj.tracking.FBXSettings.scale=FBXSettings.scale        
-        obj.tracking.FBXSettings.decalOffset=FBXSettings.decalOffset        
-        obj.tracking.FBXSettings.applyTransform=FBXSettings.applyTransform
-        obj.tracking.FBXSettings.usePrePostRot=FBXSettings.usePrePostRot
-        obj.tracking.FBXSettings.forward=FBXSettings.forward
-        obj.tracking.FBXSettings.up=FBXSettings.up
-        obj.tracking.FBXSettings.useAnim=FBXSettings.useAnim
-        obj.tracking.FBXSettings.animOffset=FBXSettings.animOffset        
-        obj.tracking.FBXSettings.ignoreLeafBones=FBXSettings.ignoreLeafBones
-        obj.tracking.FBXSettings.forceConnected=FBXSettings.forceConnected
-        obj.tracking.FBXSettings.autoBones=FBXSettings.autoBones
-        obj.tracking.FBXSettings.primBoneAxis=FBXSettings.primBoneAxis
-        obj.tracking.FBXSettings.secBoneAxis=FBXSettings.secBoneAxis
-        obj.tracking.FBXSettings.reimportmaterials=FBXSettings.reimportmaterials
-        obj.tracking.FBXSettings.reimportuvs=FBXSettings.reimportuvs
-        obj.tracking.FBXSettings.reimportposition=FBXSettings.reimportposition
+
+        obj.tracking.OBJSettings_imageSearch= OBJSettings.imageSearch
+        obj.tracking.OBJSettings_smoothGroups= OBJSettings.smoothGroups
+        obj.tracking.OBJSettings_lines= OBJSettings.lines
+        obj.tracking.OBJSettings_clampSize=OBJSettings.clampSize
+        obj.tracking.OBJSettings_splitByObject=OBJSettings.splitByObject
+        obj.tracking.OBJSettings_reimportuvs= OBJSettings.reimportuvs        
+        obj.tracking.OBJSettings_splitByGroup= OBJSettings.splitByGroup
+        obj.tracking.OBJSettings_polyGroups= OBJSettings.polyGroups
+        obj.tracking.OBJSettings_reimportmaterials= OBJSettings.reimportmaterials
+        obj.tracking.OBJSettings_reimportposition= OBJSettings.reimportposition
+        obj.tracking.OBJSettings_forward= OBJSettings.forward
+        obj.tracking.OBJSettings_up=OBJSettings.up
+        obj.tracking.OBJSettings_split= OBJSettings.split
+
+        obj.tracking.FBXSettings_customNormals=FBXSettings.customNormals
+        obj.tracking.FBXSettings_subdData=FBXSettings.subdData
+        obj.tracking.FBXSettings_customProps=FBXSettings.customProps
+        obj.tracking.FBXSettings_EnumAsStrings=FBXSettings.EnumAsStrings
+        obj.tracking.FBXSettings_imageSearch=FBXSettings.imageSearch
+        obj.tracking.FBXSettings_scale=FBXSettings.scale        
+        obj.tracking.FBXSettings_decalOffset=FBXSettings.decalOffset        
+        obj.tracking.FBXSettings_applyTransform=FBXSettings.applyTransform
+        obj.tracking.FBXSettings_usePrePostRot=FBXSettings.usePrePostRot
+        obj.tracking.FBXSettings_forward=FBXSettings.forward
+        obj.tracking.FBXSettings_up=FBXSettings.up
+        obj.tracking.FBXSettings_useAnim=FBXSettings.useAnim
+        obj.tracking.FBXSettings_animOffset=FBXSettings.animOffset        
+        obj.tracking.FBXSettings_ignoreLeafBones=FBXSettings.ignoreLeafBones
+        obj.tracking.FBXSettings_forceConnected=FBXSettings.forceConnected
+        obj.tracking.FBXSettings_autoBones=FBXSettings.autoBones
+        obj.tracking.FBXSettings_primBoneAxis=FBXSettings.primBoneAxis
+        obj.tracking.FBXSettings_secBoneAxis=FBXSettings.secBoneAxis
+        obj.tracking.FBXSettings_reimportmaterials=FBXSettings.reimportmaterials
+        obj.tracking.FBXSettings_reimportuvs=FBXSettings.reimportuvs
+        obj.tracking.FBXSettings_reimportposition=FBXSettings.reimportposition
         #print(obj.tracking.OBJSettings.lines)
         index=index+1
         appendobject(obj) 
@@ -588,7 +704,43 @@ class OBJECT_OT_HeartBeat(bpy.types.Operator):
                         continue   
                     if (obj.tracking.tracked) and (not obj==None): 
                         path=obj.tracking.linkpath   
-                        OBJSettings= obj.tracking.OBJSettings
+
+                        OBJSettings.imageSearch= obj.tracking.OBJSettings_imageSearch
+                        OBJSettings.smoothGroups = obj.tracking.OBJSettings_smoothGroups
+                        OBJSettings.lines = obj.tracking.OBJSettings_lines
+                        OBJSettings.clampSize = obj.tracking.OBJSettings_clampSize
+                        OBJSettings.splitByObject = obj.tracking.OBJSettings_splitByObject
+                        OBJSettings.reimportuvs = obj.tracking.OBJSettings_reimportuvs     
+                        OBJSettings.splitByGroup = obj.tracking.OBJSettings_splitByGroup
+                        OBJSettings.polyGroups = obj.tracking.OBJSettings_polyGroups
+                        OBJSettings.reimportmaterials = obj.tracking.OBJSettings_reimportmaterials
+                        OBJSettings.reimportposition = obj.tracking.OBJSettings_reimportposition
+                        OBJSettings.forward = obj.tracking.OBJSettings_forward
+                        OBJSettings.up = obj.tracking.OBJSettings_up
+                        OBJSettings.Split = obj.tracking.OBJSettings_split
+
+                        FBXSettings.customNormals=obj.tracking.FBXSettings_customNormals
+                        FBXSettings.subdData=obj.tracking.FBXSettings_subdData
+                        FBXSettings.customProps=obj.tracking.FBXSettings_customProps
+                        FBXSettings.EnumAsStrings=obj.tracking.FBXSettings_EnumAsStrings
+                        FBXSettings.imageSearch=obj.tracking.FBXSettings_imageSearch
+                        FBXSettings.scale=obj.tracking.FBXSettings_scale
+                        FBXSettings.decalOffset=obj.tracking.FBXSettings_decalOffset
+                        FBXSettings.applyTransform=obj.tracking.FBXSettings_applyTransform
+                        FBXSettings.usePrePostRot=obj.tracking.FBXSettings_usePrePostRot
+                        FBXSettings.forward=obj.tracking.FBXSettings_forward
+                        FBXSettings.useAnim=obj.tracking.FBXSettings_useAnim
+                        FBXSettings.animOffset=obj.tracking.FBXSettings_animOffset    
+                        FBXSettings.ignoreLeafBones=obj.tracking.FBXSettings_ignoreLeafBones
+                        FBXSettings.forceConnected=obj.tracking.FBXSettings_forceConnected
+                        FBXSettings.autoBones=obj.tracking.FBXSettings_autoBones
+                        FBXSettings.primBoneAxis=obj.tracking.FBXSettings_primBoneAxis
+                        FBXSettings.secBoneAxis=obj.tracking.FBXSettings_secBoneAxis		
+                        FBXSettings.reimportmaterials=obj.tracking.FBXSettings_reimportmaterials
+                        FBXSettings.reimportuvs=obj.tracking.FBXSettings_reimportuvs
+                        FBXSettings.reimportposition=obj.tracking.FBXSettings_reimportposition
+	
+
                         if os.path.isfile(path):      
                             time=str(os.path.getmtime(path))
                             if (not time==obj.tracking.linktime):
@@ -733,8 +885,10 @@ def RestoreMaterials(materialcontainers):
     counter=0
     for o in materialcontainers:    
         if (counter+1<=len(bpy.context.selected_objects)):  
-            for i in range (0,len(bpy.context.selected_objects[counter].data.materials)):
-                bpy.context.selected_objects[counter].data.materials[i]=o.materials_blend[i]
+            if (bpy.context.selected_objects[counter].type=='MESH'):
+                for i in range (0,len(bpy.context.selected_objects[counter].data.materials)):
+                    if (len(o.materials_blend)>i and len(bpy.context.selected_objects[counter].data.materials)>i):
+                        bpy.context.selected_objects[counter].data.materials[i]=o.materials_blend[i]
         counter=counter+1    
     
 def positionstosave(linkpath):
@@ -830,7 +984,12 @@ def save():
         obj=on.object
         if obj.tracking.linkpath==filepath:
             obj.select_set(True)
-    bpy.ops.export_scene.fbx(filepath=filepath,use_selection=True)
+
+    extension=filepath[(len(filepath)-3):]       
+    if (extension.lower()=="fbx"):
+        bpy.ops.export_scene.fbx(filepath = filepath,use_selection=True)
+    if (extension.lower()=="obj"):     
+        bpy.ops.export_scene.obj(filepath = filepath,use_selection=True)    
     time=os.path.getmtime(filepath)
     for obj in bpy.context.selected_objects:
         obj.tracking.linktime=str(time)                   
@@ -1503,5 +1662,5 @@ register, unregister = bpy.utils.register_classes_factory(classes)
 
 registerprops()
 
-if __name__ == "__main__":
+if __name__ == "__main__":    
     register()
