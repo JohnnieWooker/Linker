@@ -1549,7 +1549,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
             FBXSettings.reimportuvs=self.reimportuvs
             FBXSettings.reimportposition=self.fbxreimportposition
             
-            importfbx([],[],[],self.filepath, OBJSettings, FBXSettings)  
+            importModel([],[],[],self.filepath, OBJSettings, FBXSettings)  
             #return bpy.ops.fbxlinker.heartbeat('INVOKE_DEFAULT') 
             return {'FINISHED'}
 
