@@ -579,10 +579,17 @@ def togglelink(self):
             else:
                 bpy.ops.fbxlinker.export('INVOKE_DEFAULT')    
             
+def getContext(context):
+    if context=="EDIT_MESH": return "EDIT"
+    return context 
+
 def save():
     oldselected=bpy.context.selected_objects
     oldactive=bpy.context.view_layer.objects.active
-    filepath=bpy.context.view_layer.objects.active.tracking.linkpath    
+    filepath=bpy.context.view_layer.objects.active.tracking.linkpath
+    oldmode=getContext(bpy.context.mode)
+    if (bpy.context.mode!='OBJECT'):    
+        bpy.ops.object.mode_set(mode='OBJECT')
     bpy.ops.object.select_all(action='DESELECT')
     for on in bpy.context.scene.tracked_objects:        
         obj=on.object
@@ -601,6 +608,7 @@ def save():
     bpy.context.view_layer.objects.active=oldactive
     for obj in oldselected:
         obj.select_set(True)
+    bpy.ops.object.mode_set(mode=oldmode)    
         
 def exportfbx(filepath, OBJSettings,FBXSettings):
     extension=filepath[(len(filepath)-3):]

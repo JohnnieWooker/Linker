@@ -8,8 +8,8 @@ from . import utils
 bl_info = {
     "name" : "Linker",
     "author" : "Lukasz Hoffmann",
-    "version" : (1, 1, 4),
-    "blender" : (2, 80, 0),
+    "version" : (1, 1, 5),
+    "blender" : (3, 1, 0),
     "location" : "View 3D > Object Mode > Tool Shelf",
     "description" :
     "Link FBX files",
@@ -405,7 +405,7 @@ class Open_OT_Export(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
         imageSearch: bpy.props.BoolProperty( name='Image Search', description='Search subdirs for any associated images (Warning, may be slow).', default=True )
         smoothGroups: bpy.props.BoolProperty( name='Smooth Groups', description='Surround smooth groups by sharp edges.', default=True )
         lines: bpy.props.BoolProperty( name='Lines', description='Import lines and faces with 2 verts as edge.', default=True )
-        clampSize: bpy.props.FloatProperty( name='Clamp Size', description='Clamp bounds under this value (zero to disable).', default=0 )
+        clampSize: bpy.props.IntProperty( name='Clamp Size', description='Clamp bounds under this value (zero to disable).', default=0 )
         forward: bpy.props.EnumProperty(
                     name='Forward axis',
                     description='Forward axis',
@@ -452,8 +452,8 @@ class Open_OT_Export(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
         fbxCustomProps: bpy.props.BoolProperty( name='Custom Properties', description='Import user properties as custom properties.', default=True )
         fbxEnumAsStrings: bpy.props.BoolProperty( name='Import Enums As Strings', description='Stores enumeration values as strings.', default=True )
         fbxImageSearch: bpy.props.BoolProperty( name='Image Search', description='Search subdirs for any associated images (WARNING: may be slow).', default=True )
-        fbxScale: bpy.props.FloatProperty( name='Scale', description='Scale.', default=1 )
-        fbxDecalOffset: bpy.props.FloatProperty( name='Decal Offset', description='Displace geometry of alpha meshes.', default=0 )
+        fbxScale: bpy.props.IntProperty( name='Scale', description='Scale.', default=1 )
+        fbxDecalOffset: bpy.props.IntProperty( name='Decal Offset', description='Displace geometry of alpha meshes.', default=0 )
         fbxApplyTransform: bpy.props.BoolProperty( name='Apply Transformz', description='Bake space transform into object, avoids getting unwanted rotations to objects when target space is not aligned with Blender\'s space (WARNING! experimental option, use at own risks, known broken with armatures/animations).', default=False )
         fbxPrePostRot: bpy.props.BoolProperty( name='Use Pre/Post Rotation', description='Use pre/post rotation from FBX transform (you may have to disable that in some cases).', default=True )
         fbxManualORient: bpy.props.BoolProperty( name='Manual Orientation', description='Specify orientation and scale, instead of using embedded data in FBX file.', default=False )
@@ -482,7 +482,7 @@ class Open_OT_Export(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
                     },
                     default='Y')
         fbxAnimation: bpy.props.BoolProperty( name='Animation', description='Import FBX animation.', default=True )
-        fbxAnimationOffset: bpy.props.FloatProperty( name='Animation Offset', description='Offset to apply to animation during import, in frames.', default=1 )
+        fbxAnimationOffset: bpy.props.IntProperty( name='Animation Offset', description='Offset to apply to animation during import, in frames.', default=1 )
         fbxIgnoreLeafBones: bpy.props.BoolProperty( name='Ignore Leaf Bones', description='Ignore the las bone at the end of each chain (used to mark the length of the previous bone).', default=False )
         fbxForceConnected: bpy.props.BoolProperty( name='Force Connect Children', description='Force connection of children bones to their parent, even if their computed head/tail position do not match (can be useful with pure-joints-type armatures).', default=False )
         fbxAutoBones: bpy.props.BoolProperty( name='Automatic Bone Orientation', description='Try to align major bone axis with the bone children.', default=False )
@@ -648,7 +648,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
         imageSearch: bpy.props.BoolProperty( name='Image Search', description='Search subdirs for any associated images (Warning, may be slow).', default=True )
         smoothGroups: bpy.props.BoolProperty( name='Smooth Groups', description='Surround smooth groups by sharp edges.', default=True )
         lines: bpy.props.BoolProperty( name='Lines', description='Import lines and faces with 2 verts as edge.', default=True )
-        clampSize: bpy.props.FloatProperty( name='Clamp Size', description='Clamp bounds under this value (zero to disable).', default=0 )
+        clampSize: bpy.props.IntProperty( name='Clamp Size', description='Clamp bounds under this value (zero to disable).', default=0 )
         forward: bpy.props.EnumProperty(
                     name='Forward axis',
                     description='Forward axis',
@@ -695,8 +695,8 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
         fbxCustomProps: bpy.props.BoolProperty( name='Custom Properties', description='Import user properties as custom properties.', default=True )
         fbxEnumAsStrings: bpy.props.BoolProperty( name='Import Enums As Strings', description='Stores enumeration values as strings.', default=True )
         fbxImageSearch: bpy.props.BoolProperty( name='Image Search', description='Search subdirs for any associated images (WARNING: may be slow).', default=True )
-        fbxScale: bpy.props.FloatProperty( name='Scale', description='Scale.', default=1 )
-        fbxDecalOffset: bpy.props.FloatProperty( name='Decal Offset', description='Displace geometry of alpha meshes.', default=0 )
+        fbxScale: bpy.props.IntProperty( name='Scale', description='Scale.', default=1 )
+        fbxDecalOffset: bpy.props.IntProperty( name='Decal Offset', description='Displace geometry of alpha meshes.', default=0 )
         fbxApplyTransform: bpy.props.BoolProperty( name='Apply Transformz', description='Bake space transform into object, avoids getting unwanted rotations to objects when target space is not aligned with Blender\'s space (WARNING! experimental option, use at own risks, known broken with armatures/animations).', default=False )
         fbxPrePostRot: bpy.props.BoolProperty( name='Use Pre/Post Rotation', description='Use pre/post rotation from FBX transform (you may have to disable that in some cases).', default=True )
         fbxManualORient: bpy.props.BoolProperty( name='Manual Orientation', description='Specify orientation and scale, instead of using embedded data in FBX file.', default=False )
@@ -725,7 +725,7 @@ class Open_OT_OpenBrowser(bpy.types.Operator ,bpy_extras.io_utils.ImportHelper):
                     },
                     default='Y')
         fbxAnimation: bpy.props.BoolProperty( name='Animation', description='Import FBX animation.', default=True )
-        fbxAnimationOffset: bpy.props.FloatProperty( name='Animation Offset', description='Offset to apply to animation during import, in frames.', default=1 )
+        fbxAnimationOffset: bpy.props.IntProperty( name='Animation Offset', description='Offset to apply to animation during import, in frames.', default=1 )
         fbxIgnoreLeafBones: bpy.props.BoolProperty( name='Ignore Leaf Bones', description='Ignore the las bone at the end of each chain (used to mark the length of the previous bone).', default=False )
         fbxForceConnected: bpy.props.BoolProperty( name='Force Connect Children', description='Force connection of children bones to their parent, even if their computed head/tail position do not match (can be useful with pure-joints-type armatures).', default=False )
         fbxAutoBones: bpy.props.BoolProperty( name='Automatic Bone Orientation', description='Try to align major bone axis with the bone children.', default=False )
