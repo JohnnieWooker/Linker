@@ -8,7 +8,7 @@ from . import utils
 bl_info = {
     "name" : "Linker",
     "author" : "Lukasz Hoffmann",
-    "version" : (1, 1, 5),
+    "version" : (1, 1, 7),
     "blender" : (3, 1, 0),
     "location" : "View 3D > Object Mode > Tool Shelf",
     "description" :
