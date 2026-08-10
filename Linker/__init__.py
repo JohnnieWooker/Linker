@@ -1,4 +1,4 @@
-﻿"""Linker add-on entry point."""
+"""Linker add-on entry point."""
 
 bl_info = {
     "name": "Linker",
@@ -11,12 +11,13 @@ bl_info = {
     "category": "Import-Export",
 }
 
-from . import operators, properties, sync, ui  # noqa: E402
+from . import operators, presets, properties, sync, ui  # noqa: E402
 
 
 def register():
     properties.register()
     operators.register()
+    presets.register()
     ui.register()
     sync.register()
 
@@ -24,6 +25,7 @@ def register():
 def unregister():
     sync.unregister()
     ui.unregister()
+    presets.unregister()
     operators.unregister()
     properties.unregister()
 

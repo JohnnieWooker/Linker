@@ -146,31 +146,140 @@ def _export_file(path: str, tracking):
     raise ValueError(f"Unsupported model format: {extension}")
 
 
+def _walk_layer_collections(layer_collection):
+    yield layer_collection
+    for child in layer_collection.children:
+        yield from _walk_layer_collections(child)
+
+
+def _layer_collections_for_objects(root, objects):
+    targets = {collection for obj in objects for collection in obj.users_collection}
+    result = []
+
+    def visit(layer_collection, path):
+        path = (*path, layer_collection)
+        if layer_collection.collection in targets:
+            for item in path:
+                if item not in result:
+                    result.append(item)
+        for child in layer_collection.children:
+            visit(child, path)
+
+    visit(root, ())
+    return result
+
+
+def _find_layer_collection(root, collection):
+    for layer_collection in _walk_layer_collections(root):
+        if layer_collection.collection == collection:
+            return layer_collection
+    return None
+
+
 @contextmanager
-def preserved_context():
-    selected_names = [obj.name for obj in bpy.context.selected_objects]
-    active = bpy.context.view_layer.objects.active
+def preserved_context(expose_objects=()):
+    """Restore mode, active object, selection, and viewport visibility."""
+    expose_objects = tuple(expose_objects)
+    view_layer = bpy.context.view_layer
+    selected_names = [obj.name for obj in view_layer.objects if obj.select_get()]
+    active = view_layer.objects.active
     active_name = active.name if active else None
     old_mode = active.mode if active and active.mode != "OBJECT" else None
+    visibility = {}
+    layer_visibility = []
+    collection_visibility = {}
+
+    if expose_objects:
+        layers = _layer_collections_for_objects(view_layer.layer_collection, expose_objects)
+        for layer_collection in layers:
+            collection = layer_collection.collection
+            layer_visibility.append((
+                collection, layer_collection.exclude, layer_collection.hide_viewport
+            ))
+            collection_visibility.setdefault(collection, collection.hide_viewport)
+
+        # Snapshot every flag before assignments that can rebuild LayerCollection RNA.
+        for collection in collection_visibility:
+            if not collection_visibility[collection]:
+                continue
+            collection.hide_viewport = False
+        for collection, _excluded, _hidden in layer_visibility:
+            if not (_excluded or _hidden):
+                continue
+            layer_collection = _find_layer_collection(view_layer.layer_collection, collection)
+            if not layer_collection:
+                continue
+            layer_collection.exclude = False
+            layer_collection = _find_layer_collection(view_layer.layer_collection, collection)
+            if layer_collection:
+                layer_collection.hide_viewport = False
+
+    for obj in expose_objects:
+        if obj.name not in view_layer.objects:
+            continue
+        visibility[obj.name] = (obj.hide_viewport, obj.hide_get(view_layer=view_layer), obj.hide_select)
+        obj.hide_viewport = False
+        obj.hide_select = False
+        obj.hide_set(False, view_layer=view_layer)
+
     if old_mode:
         bpy.ops.object.mode_set(mode="OBJECT")
     try:
         yield
     finally:
-        if bpy.context.view_layer:
+        if view_layer:
+            # Imported replacements reuse the old names. Expose them before
+            # restoring the original selection and active object.
+            for name in visibility:
+                obj = view_layer.objects.get(name)
+                if obj:
+                    obj.hide_viewport = False
+                    obj.hide_select = False
+                    obj.hide_set(False, view_layer=view_layer)
+
             bpy.ops.object.select_all(action="DESELECT")
             for name in selected_names:
-                obj = bpy.context.view_layer.objects.get(name)
+                obj = view_layer.objects.get(name)
                 if obj:
-                    obj.select_set(True)
-            restored_active = bpy.context.view_layer.objects.get(active_name) if active_name else None
+                    try:
+                        obj.select_set(True, view_layer=view_layer)
+                    except RuntimeError:
+                        pass
+
+            restored_active = view_layer.objects.get(active_name) if active_name else None
             if restored_active:
-                bpy.context.view_layer.objects.active = restored_active
+                view_layer.objects.active = restored_active
                 if old_mode:
                     try:
                         bpy.ops.object.mode_set(mode=old_mode)
                     except RuntimeError:
                         pass
+
+            for name, (hide_viewport, hidden, hide_select) in visibility.items():
+                obj = view_layer.objects.get(name)
+                if obj:
+                    obj.hide_set(hidden, view_layer=view_layer)
+                    obj.hide_viewport = hide_viewport
+                    obj.hide_select = hide_select
+
+            # Global collection flags rebuild the layer tree, so restore them
+            # before applying per-view-layer flags through fresh RNA handles.
+            for collection, hidden in collection_visibility.items():
+                if not hidden:
+                    continue
+                collection.hide_viewport = hidden
+            # Restore ancestors first; changing an ancestor rebuilds its child layers.
+            for collection, excluded, hidden in layer_visibility:
+                if not (excluded or hidden):
+                    continue
+                layer_collection = _find_layer_collection(view_layer.layer_collection, collection)
+                if not layer_collection:
+                    continue
+                layer_collection.hide_viewport = hidden
+                layer_collection = _find_layer_collection(view_layer.layer_collection, collection)
+                if not layer_collection:
+                    continue
+                layer_collection.exclude = excluded
 
 
 def _select_only(objects):
@@ -229,7 +338,7 @@ def export_new_model(objects, raw_path: str) -> list[bpy.types.Object]:
     path = resolved_path(raw_path)
     if not Path(path).parent.is_dir():
         raise ValueError("The export directory does not exist")
-    with preserved_context():
+    with preserved_context(objects):
         _select_only(objects)
         _export_file(path, objects[0].linker)
     assign_model(objects, raw_path)
@@ -246,7 +355,7 @@ def export_model(owner) -> list[bpy.types.Object]:
     if not Path(path).parent.is_dir():
         raise ValueError("The export directory does not exist")
     members = model_members(owner)
-    with preserved_context():
+    with preserved_context(members):
         _select_only(members)
         _export_file(path, owner.linker)
     _mark_synced(members, _file_signature(path))
@@ -291,7 +400,7 @@ def import_model(owner) -> list[bpy.types.Object]:
     old_members = model_members(owner)
     snapshots = [_snapshot(obj) for obj in old_members]
     before = set(bpy.data.objects)
-    with preserved_context():
+    with preserved_context(old_members):
         bpy.ops.object.select_all(action="DESELECT")
         _import_file(path, owner.linker)
         imported = [obj for obj in bpy.data.objects if obj not in before]
@@ -306,5 +415,4 @@ def import_model(owner) -> list[bpy.types.Object]:
         for obj, snapshot in zip(imported, snapshots):
             obj.name = snapshot["name"]
         _mark_synced(imported, _file_signature(path))
-    _select_only(imported)
     return imported

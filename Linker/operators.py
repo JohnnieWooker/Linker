@@ -5,12 +5,23 @@ from __future__ import annotations
 from pathlib import Path
 
 import bpy
-from bpy.props import IntProperty, StringProperty
+from bpy.props import EnumProperty, IntProperty, StringProperty
 from bpy_extras.io_utils import ExportHelper, ImportHelper
 
 from . import io, sync
-from .models import active_model_owner, unlink_model
+from .models import active_model_owner, common_sync_direction, selected_model_owners, unlink_model
 from .paths import addon_preferences, relative_path, resolved_path
+
+
+def _batch_result(operator, action: str, completed: int, errors: list[str]):
+    if errors:
+        level = {"WARNING"} if completed else {"ERROR"}
+        operator.report(level, f"{action} {completed} model(s); {len(errors)} failed. See console.")
+        for error in errors:
+            print(f"Linker: {error}")
+    else:
+        operator.report({"INFO"}, f"{action} {completed} model(s)")
+    return {"FINISHED"} if completed else {"CANCELLED"}
 
 
 class LINKER_OT_LinkExisting(bpy.types.Operator, ImportHelper):
@@ -60,69 +71,75 @@ class LINKER_OT_ExportSelection(bpy.types.Operator, ExportHelper):
 
 class LINKER_OT_SaveModel(bpy.types.Operator):
     bl_idname = "linker.save_model"
-    bl_label = "Save Model"
-    bl_description = "Export this linked model now, regardless of automatic sync direction"
+    bl_label = "Save Selected Models"
+    bl_description = "Export every linked model represented by the selection"
 
     @classmethod
     def poll(cls, context):
-        return active_model_owner(context) is not None
+        return bool(selected_model_owners(context))
 
     def execute(self, context):
-        owner = active_model_owner(context)
-        try:
-            with sync.suspend_tracking():
-                io.export_model(owner)
-            sync.mark_clean(owner.linker.model_id)
-            self.report({"INFO"}, f"Saved {owner.linker.model_name}")
-            return {"FINISHED"}
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
+        owners = selected_model_owners(context)
+        completed = 0
+        errors = []
+        with sync.suspend_tracking():
+            for owner in owners:
+                name = owner.linker.model_name
+                model_id = owner.linker.model_id
+                try:
+                    io.export_model(owner)
+                    sync.mark_clean(model_id)
+                    completed += 1
+                except Exception as exc:
+                    errors.append(f"{name}: {exc}")
+        return _batch_result(self, "Saved", completed, errors)
 
 class LINKER_OT_ReloadModel(bpy.types.Operator):
     bl_idname = "linker.reload_model"
-    bl_label = "Reload Model"
-    bl_description = "Import the linked file now, replacing this model"
+    bl_label = "Reload Selected Models"
+    bl_description = "Reload every linked model represented by the selection"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
     def poll(cls, context):
-        return active_model_owner(context) is not None
+        return bool(selected_model_owners(context))
 
     def execute(self, context):
-        owner = active_model_owner(context)
-        model_id = owner.linker.model_id
-        try:
-            with sync.suspend_tracking():
-                imported = io.import_model(owner)
-            sync.mark_clean(model_id)
-            self.report({"INFO"}, f"Reloaded {len(imported)} object(s)")
-            return {"FINISHED"}
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
+        owners = selected_model_owners(context)
+        completed = 0
+        errors = []
+        with sync.suspend_tracking():
+            for owner in owners:
+                name = owner.linker.model_name
+                model_id = owner.linker.model_id
+                try:
+                    io.import_model(owner)
+                    sync.mark_clean(model_id)
+                    completed += 1
+                except Exception as exc:
+                    errors.append(f"{name}: {exc}")
+        return _batch_result(self, "Reloaded", completed, errors)
 
 class LINKER_OT_SyncModel(bpy.types.Operator):
     bl_idname = "linker.sync_model"
-    bl_label = "Sync Model"
-    bl_description = "Run one synchronization pass for the selected linked model"
+    bl_label = "Sync Selected Models"
+    bl_description = "Synchronize every linked model represented by the selection"
 
     @classmethod
     def poll(cls, context):
-        return active_model_owner(context) is not None
+        return bool(selected_model_owners(context))
 
     def execute(self, context):
-        owner = active_model_owner(context)
-        try:
-            action = sync.sync_model(owner, force=True)
-            self.report({"INFO"}, "Model is up to date" if action == "CLEAN" else f"{action.title()} completed")
-            return {"FINISHED"}
-        except Exception as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
-
+        completed = 0
+        errors = []
+        for owner in selected_model_owners(context):
+            name = owner.linker.model_name
+            try:
+                sync.sync_model(owner, force=True)
+                completed += 1
+            except Exception as exc:
+                errors.append(f"{name}: {exc}")
+        return _batch_result(self, "Synchronized", completed, errors)
 
 class LINKER_OT_SyncAll(bpy.types.Operator):
     bl_idname = "linker.sync_all"
@@ -154,43 +171,77 @@ class LINKER_OT_ToggleAutoSync(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class LINKER_OT_UnlinkModel(bpy.types.Operator):
-    bl_idname = "linker.unlink_model"
-    bl_label = "Unlink Model"
-    bl_description = "Stop tracking this model without deleting its objects or file"
+class LINKER_OT_SetSyncDirection(bpy.types.Operator):
+    bl_idname = "linker.set_sync_direction"
+    bl_label = "Set Sync Direction"
+    bl_description = "Set the sync direction for every linked model represented by the selection"
     bl_options = {"REGISTER", "UNDO"}
+
+    direction: EnumProperty(
+        name="Direction",
+        items=(
+            ("BOTH", "Two-way", "Import file changes and export Blender changes"),
+            ("IMPORT", "Import only", "Only update Blender from disk"),
+            ("EXPORT", "Export only", "Only update the file from Blender"),
+        ),
+    )
 
     @classmethod
     def poll(cls, context):
-        return active_model_owner(context) is not None
+        owners = selected_model_owners(context)
+        return bool(owners) and common_sync_direction(context) is not None
 
     def execute(self, context):
-        owner = active_model_owner(context)
-        model_id = owner.linker.model_id
-        unlink_model(owner)
-        sync.mark_clean(model_id)
+        owners = selected_model_owners(context)
+        if not owners or common_sync_direction(context) is None:
+            self.report({"WARNING"}, "Selected models have multiple sync direction values")
+            return {"CANCELLED"}
+        for owner in owners:
+            owner.linker.sync_direction = self.direction
+        self.report({"INFO"}, f"Updated {len(owners)} model(s)")
         return {"FINISHED"}
 
 
-class LINKER_OT_MakeRelative(bpy.types.Operator):
-    bl_idname = "linker.make_relative"
-    bl_label = "Make Relative"
-    bl_description = "Store the link relative to the saved .blend file"
+class LINKER_OT_UnlinkModel(bpy.types.Operator):
+    bl_idname = "linker.unlink_model"
+    bl_label = "Unlink Selected Models"
+    bl_description = "Stop tracking every linked model represented by the selection"
     bl_options = {"REGISTER", "UNDO"}
 
     @classmethod
     def poll(cls, context):
-        return active_model_owner(context) is not None
+        return bool(selected_model_owners(context))
 
     def execute(self, context):
-        owner = active_model_owner(context)
-        try:
-            owner.linker.link_path = relative_path(owner.linker.link_path)
-            return {"FINISHED"}
-        except ValueError as exc:
-            self.report({"ERROR"}, str(exc))
-            return {"CANCELLED"}
+        owners = selected_model_owners(context)
+        for owner in owners:
+            model_id = owner.linker.model_id
+            unlink_model(owner)
+            sync.mark_clean(model_id)
+        self.report({"INFO"}, f"Unlinked {len(owners)} model(s)")
+        return {"FINISHED"}
 
+class LINKER_OT_MakeRelative(bpy.types.Operator):
+    bl_idname = "linker.make_relative"
+    bl_label = "Make Selected Paths Relative"
+    bl_description = "Make paths relative for every linked model represented by the selection"
+    bl_options = {"REGISTER", "UNDO"}
+
+    @classmethod
+    def poll(cls, context):
+        return bool(selected_model_owners(context))
+
+    def execute(self, context):
+        completed = 0
+        errors = []
+        for owner in selected_model_owners(context):
+            name = owner.linker.model_name
+            try:
+                owner.linker.link_path = relative_path(owner.linker.link_path)
+                completed += 1
+            except ValueError as exc:
+                errors.append(f"{name}: {exc}")
+        return _batch_result(self, "Updated", completed, errors)
 
 class LINKER_OT_OpenLocation(bpy.types.Operator):
     bl_idname = "linker.open_location"
@@ -232,7 +283,8 @@ class LINKER_OT_VariableRemove(bpy.types.Operator):
 CLASSES = (
     LINKER_OT_LinkExisting, LINKER_OT_ExportSelection, LINKER_OT_SaveModel,
     LINKER_OT_ReloadModel, LINKER_OT_SyncModel, LINKER_OT_SyncAll,
-    LINKER_OT_ToggleAutoSync, LINKER_OT_UnlinkModel, LINKER_OT_MakeRelative,
+    LINKER_OT_ToggleAutoSync, LINKER_OT_SetSyncDirection,
+    LINKER_OT_UnlinkModel, LINKER_OT_MakeRelative,
     LINKER_OT_OpenLocation, LINKER_OT_VariableAdd, LINKER_OT_VariableRemove,
 )
 

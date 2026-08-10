@@ -6,8 +6,21 @@ from pathlib import Path
 
 import bpy
 
-from .models import active_model_owner, all_model_owners, model_members
+from .models import (
+    active_model_owner,
+    all_model_owners,
+    common_sync_direction,
+    model_members,
+    selected_model_owners,
+)
+from .format_settings import (
+    common_field_value,
+    common_format,
+    common_preset_id,
+    mixed_fields,
+)
 from .paths import resolved_path, validation_error
+from .presets import preset_label
 from .sync import is_dirty
 
 
@@ -43,16 +56,33 @@ class LINKER_PT_Main(bpy.types.Panel):
             return
 
         settings = owner.linker
+        batch_count = len(selected_model_owners(context))
         box = layout.box()
         header = box.row()
         header.label(text=settings.model_name, icon="LINKED")
         header.label(text=f"{len(model_members(owner))} object(s)")
-        box.prop(settings, "sync_direction", expand=True)
+        shared_direction = common_sync_direction(context)
+        direction = box.column(align=True)
+        direction.enabled = shared_direction is not None
+        for value, label, icon in (
+            ("BOTH", "Two-way", "ARROW_LEFTRIGHT"),
+            ("IMPORT", "Import only", "IMPORT"),
+            ("EXPORT", "Export only", "EXPORT"),
+        ):
+            operator = direction.operator(
+                "linker.set_sync_direction",
+                text=label,
+                icon=icon,
+                depress=shared_direction == value,
+            )
+            operator.direction = value
+        if shared_direction is None:
+            box.label(text="Multiple values", icon="INFO")
 
         actions = box.row(align=True)
-        actions.operator("linker.sync_model", text="Sync", icon="FILE_REFRESH")
-        actions.operator("linker.save_model", text="Save", icon="EXPORT")
-        actions.operator("linker.reload_model", text="Reload", icon="IMPORT")
+        actions.operator("linker.sync_model", text=f"Sync ({batch_count})", icon="FILE_REFRESH")
+        actions.operator("linker.save_model", text=f"Save ({batch_count})", icon="EXPORT")
+        actions.operator("linker.reload_model", text=f"Reload ({batch_count})", icon="IMPORT")
 
         path_box = layout.box()
         path_box.label(text="Linked File")
@@ -67,12 +97,41 @@ class LINKER_PT_Main(bpy.types.Panel):
         if error:
             path_box.operator("linker.sync_all", text="Sync All Valid Models", icon="FILE_REFRESH")
         path_actions = path_box.row(align=True)
-        path_actions.operator("linker.make_relative", icon="FILE_PARENT")
+        path_actions.operator("linker.make_relative", text=f"Relative ({batch_count})", icon="FILE_PARENT")
         path_actions.operator("linker.open_location", icon="FILE_FOLDER")
-        path_actions.operator("linker.unlink_model", icon="UNLINKED")
+        path_actions.operator("linker.unlink_model", text=f"Unlink ({batch_count})", icon="UNLINKED")
 
         if is_dirty(settings.model_id):
             layout.label(text="Blender model has unsaved changes", icon="DOT")
+
+
+def _batch_property(layout, settings, owners, file_format, field, batch_enabled=True, **kwargs):
+    common, _value = common_field_value(owners, file_format, field)
+    row = layout.row()
+    row.enabled = batch_enabled and common and kwargs.pop("enabled", True)
+    row.prop(settings, field, **kwargs)
+
+
+def _preset_controls(layout, context, owners, file_format, side, batch_enabled):
+    fields_mixed = bool(mixed_fields(owners, file_format, side)) if batch_enabled else True
+    common_selection, preset_id = common_preset_id(owners, side)
+    if fields_mixed or not common_selection:
+        layout.label(text="Multiple values", icon="INFO")
+
+    row = layout.row(align=True)
+    row.enabled = batch_enabled and common_selection
+    menu_id = "LINKER_MT_import_presets" if side == "IMPORT" else "LINKER_MT_export_presets"
+    row.menu(menu_id, text=preset_label(context.scene, preset_id or ""), icon="PRESET")
+
+    save = row.row(align=True)
+    save.enabled = not fields_mixed
+    operator = save.operator("linker.save_format_preset", text="", icon="ADD")
+    operator.side = side
+
+    remove = row.row(align=True)
+    remove.enabled = bool(preset_id and preset_label(context.scene, preset_id) != "Missing Preset")
+    operator = remove.operator("linker.remove_format_preset", text="", icon="REMOVE")
+    operator.side = side
 
 
 class LINKER_PT_FormatSettings(bpy.types.Panel):
@@ -91,62 +150,104 @@ class LINKER_PT_FormatSettings(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         owner = active_model_owner(context)
+        owners = selected_model_owners(context)
         extension = Path(resolved_path(owner.linker.link_path)).suffix.lower()
-        if extension == ".fbx":
-            settings = owner.linker.fbx
-            imported = layout.box()
-            imported.label(text="FBX Import (Blender 5.1 Native)")
-            imported.prop(settings, "global_scale")
-            imported.prop(settings, "use_custom_normals")
-            imported.prop(settings, "import_subdivision")
-            imported.prop(settings, "use_custom_props")
-            imported.prop(settings, "enums_as_strings")
-            imported.prop(settings, "import_colors")
-            imported.prop(settings, "validate_meshes")
-            imported.prop(settings, "material_collision")
-            imported.prop(settings, "use_animation")
-            anim = imported.row()
-            anim.enabled = settings.use_animation
-            anim.prop(settings, "animation_offset")
-            imported.prop(settings, "ignore_leaf_bones")
+        file_format = extension.removeprefix(".")
+        batch_enabled = common_format(owners) == file_format
+        if not batch_enabled:
+            layout.label(text="Multiple values (file formats)", icon="INFO")
 
-            exported = layout.box()
-            exported.label(text="FBX Export")
-            axes = exported.row(align=True)
-            axes.prop(settings, "axis_forward")
-            axes.prop(settings, "axis_up")
-            exported.prop(settings, "export_subdivision")
-            exported.prop(settings, "apply_unit_scale")
-            exported.prop(settings, "bake_space_transform")
-            exported.prop(settings, "use_mesh_modifiers")
-            exported.prop(settings, "only_deform_bones")
-            exported.prop(settings, "add_leaf_bones")
-            exported.prop(settings, "bake_animation")
+        if extension == ".fbx":
+            self._draw_fbx(layout, context, owner.linker.fbx, owners, batch_enabled)
         elif extension == ".obj":
-            settings = owner.linker.obj
-            layout.prop(settings, "global_scale")
-            layout.prop(settings, "clamp_size")
-            axes = layout.row(align=True)
-            axes.prop(settings, "forward_axis")
-            axes.prop(settings, "up_axis")
-            layout.prop(settings, "split_objects")
-            layout.prop(settings, "split_groups")
-            layout.prop(settings, "import_vertex_groups")
-            layout.prop(settings, "validate_meshes")
-            layout.separator()
-            layout.prop(settings, "export_materials")
-            layout.prop(settings, "export_smooth_groups")
-            layout.prop(settings, "apply_modifiers")
+            self._draw_obj(layout, context, owner.linker.obj, owners, batch_enabled)
         else:
             layout.label(text="Set a valid .fbx or .obj path", icon="INFO")
 
-        if extension in {".fbx", ".obj"}:
-            preserve = layout.box()
-            preserve.label(text="On Reload")
-            preserve.prop(settings, "reimport_materials")
-            preserve.prop(settings, "reimport_uvs")
-            preserve.prop(settings, "reimport_transforms")
+    @staticmethod
+    def _draw_fbx(layout, context, settings, owners, batch_enabled):
+        imported = layout.box()
+        imported.label(text="FBX Import")
+        _preset_controls(imported, context, owners, "fbx", "IMPORT", batch_enabled)
+        for field in (
+            "global_scale",
+            "use_custom_normals",
+            "import_subdivision",
+            "use_custom_props",
+            "enums_as_strings",
+            "import_colors",
+            "validate_meshes",
+            "material_collision",
+            "use_animation",
+        ):
+            _batch_property(imported, settings, owners, "fbx", field, batch_enabled)
+        animation_common, animation_enabled = common_field_value(owners, "fbx", "use_animation")
+        _batch_property(
+            imported,
+            settings,
+            owners,
+            "fbx",
+            "animation_offset",
+            batch_enabled,
+            enabled=animation_common and animation_enabled,
+        )
+        _batch_property(imported, settings, owners, "fbx", "ignore_leaf_bones", batch_enabled)
+        imported.separator()
+        imported.label(text="On Reload")
+        for field in ("reimport_materials", "reimport_uvs", "reimport_transforms"):
+            _batch_property(imported, settings, owners, "fbx", field, batch_enabled)
 
+        exported = layout.box()
+        exported.label(text="FBX Export")
+        _preset_controls(exported, context, owners, "fbx", "EXPORT", batch_enabled)
+        for field in (
+            "global_scale",
+            "use_custom_props",
+            "axis_forward",
+            "axis_up",
+            "export_subdivision",
+            "apply_unit_scale",
+            "bake_space_transform",
+            "use_mesh_modifiers",
+            "only_deform_bones",
+            "add_leaf_bones",
+            "bake_animation",
+        ):
+            _batch_property(exported, settings, owners, "fbx", field, batch_enabled)
+
+    @staticmethod
+    def _draw_obj(layout, context, settings, owners, batch_enabled):
+        imported = layout.box()
+        imported.label(text="OBJ Import")
+        _preset_controls(imported, context, owners, "obj", "IMPORT", batch_enabled)
+        for field in (
+            "global_scale",
+            "clamp_size",
+            "forward_axis",
+            "up_axis",
+            "split_objects",
+            "split_groups",
+            "import_vertex_groups",
+            "validate_meshes",
+        ):
+            _batch_property(imported, settings, owners, "obj", field, batch_enabled)
+        imported.separator()
+        imported.label(text="On Reload")
+        for field in ("reimport_materials", "reimport_uvs", "reimport_transforms"):
+            _batch_property(imported, settings, owners, "obj", field, batch_enabled)
+
+        exported = layout.box()
+        exported.label(text="OBJ Export")
+        _preset_controls(exported, context, owners, "obj", "EXPORT", batch_enabled)
+        for field in (
+            "global_scale",
+            "forward_axis",
+            "up_axis",
+            "export_materials",
+            "export_smooth_groups",
+            "apply_modifiers",
+        ):
+            _batch_property(exported, settings, owners, "obj", field, batch_enabled)
 
 class LINKER_PT_Models(bpy.types.Panel):
     bl_label = "Linked Models"

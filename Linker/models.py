@@ -28,6 +28,26 @@ def active_model_owner(context):
     return model_owner(getattr(context, "active_object", None))
 
 
+def selected_model_owners(context) -> list[bpy.types.Object]:
+    """Return each linked model represented by the selection exactly once."""
+    owners = {}
+    for obj in getattr(context, "selected_objects", ()):
+        owner = model_owner(obj)
+        if owner:
+            owners.setdefault(owner.linker.model_id, owner)
+    if not owners:
+        owner = active_model_owner(context)
+        if owner:
+            owners[owner.linker.model_id] = owner
+    return list(owners.values())
+
+
+def common_sync_direction(context) -> str | None:
+    """Return the selected models' shared direction, or None for mixed values."""
+    directions = {owner.linker.sync_direction for owner in selected_model_owners(context)}
+    return directions.pop() if len(directions) == 1 else None
+
+
 def all_model_owners(scene=None) -> list[bpy.types.Object]:
     objects = scene.objects if scene else bpy.data.objects
     owners = {}
@@ -52,9 +72,14 @@ def copy_property_group(source, target) -> None:
 
 
 def copy_settings(source, target) -> None:
-    copy_property_group(source.linker.fbx, target.linker.fbx)
-    copy_property_group(source.linker.obj, target.linker.obj)
-    target.linker.sync_direction = source.linker.sync_direction
+    from .format_settings import suspend_batch_updates
+
+    with suspend_batch_updates():
+        copy_property_group(source.linker.fbx, target.linker.fbx)
+        copy_property_group(source.linker.obj, target.linker.obj)
+        target.linker.import_preset_id = source.linker.import_preset_id
+        target.linker.export_preset_id = source.linker.export_preset_id
+        target.linker.sync_direction = source.linker.sync_direction
 
 
 def assign_model(objects, raw_path: str, source=None, model_id: str | None = None) -> str:

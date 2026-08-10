@@ -2,7 +2,8 @@
 
 Linker keeps a group of Blender objects connected to an FBX or OBJ file. It can
 pull changes made by another DCC, push Blender changes to disk, or synchronize in
-both directions.
+both directions. Import and export settings support batch editing and named project
+presets stored with the `.blend` file.
 
 This repository contains Linker 2.0, refactored for Blender 4.2+ and tested with
 Blender 5.1. The add-on uses Blender 5.1's native `wm.fbx_import` operator and the
