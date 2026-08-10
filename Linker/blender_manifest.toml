@@ -1,0 +1,25 @@
+schema_version = "1.0.0"
+
+id = "linker"
+version = "2.0.0"
+name = "Linker"
+tagline = "Synchronize Blender models with FBX and OBJ files"
+maintainer = "Lukasz Hoffmann"
+type = "add-on"
+website = "https://github.com/JohnnieWooker/Linker"
+tags = ["Import-Export", "Pipeline"]
+
+blender_version_min = "4.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+[permissions]
+files = "Import and export user-selected FBX and OBJ model files"
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  "/*.pyc",
+]
