@@ -62,6 +62,12 @@ state with the linked file's modification time. Operations are serialized on the
 main thread. Import is transactional in the practical Blender sense: new objects
 must import successfully before old objects are removed.
 
+The automatic timer returns `DEFERRED` for a linked model while any member is outside
+Object Mode. Its dirty state is retained and processed after the model returns to
+Object Mode. Explicit operators do not use this guard because Save and Reload are
+intentional overrides. This prevents automatic I/O context changes from fighting an
+active Edit Mode session or generating self-induced dirty-state oscillation.
+
 There is no semantic model merge. When both sides changed, the later timestamp is
 authoritative. A future file-watcher service and explicit conflict UI are tracked
 in the development plan.

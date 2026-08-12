@@ -16,6 +16,8 @@ at repository root.
 - Deduplicate selected-object batch actions by `model_id`; keep active-object context for UI settings.
 - Batch-edit sync direction only when selected models share one current direction.
 - Disable batch format fields and preset selectors when their selected model values differ.
+- Defer automatic synchronization while any model member is outside Object Mode;
+  retain its dirty state until editing finishes. Explicit actions remain overrides.
 - Export must include members hidden at object, collection, or view-layer level and restore selection, active object, mode, and hide flags.
 - Preserve raw paths. Resolve `%VARIABLE%` and `//` only at the I/O boundary.
 - Do not override built-in Blender operators.

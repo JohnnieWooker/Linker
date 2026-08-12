@@ -237,23 +237,6 @@ def preserved_context(expose_objects=()):
                     obj.hide_select = False
                     obj.hide_set(False, view_layer=view_layer)
 
-            bpy.ops.object.select_all(action="DESELECT")
-            for name in selected_names:
-                obj = view_layer.objects.get(name)
-                if obj:
-                    try:
-                        obj.select_set(True, view_layer=view_layer)
-                    except RuntimeError:
-                        pass
-
-            restored_active = view_layer.objects.get(active_name) if active_name else None
-            if restored_active:
-                view_layer.objects.active = restored_active
-                if old_mode:
-                    try:
-                        bpy.ops.object.mode_set(mode=old_mode)
-                    except RuntimeError:
-                        pass
 
             for name, (hide_viewport, hidden, hide_select) in visibility.items():
                 obj = view_layer.objects.get(name)
@@ -280,6 +263,24 @@ def preserved_context(expose_objects=()):
                 if not layer_collection:
                     continue
                 layer_collection.exclude = excluded
+
+            bpy.ops.object.select_all(action="DESELECT")
+            for name in selected_names:
+                obj = view_layer.objects.get(name)
+                if obj:
+                    try:
+                        obj.select_set(True, view_layer=view_layer)
+                    except RuntimeError:
+                        pass
+
+            restored_active = view_layer.objects.get(active_name) if active_name else None
+            if restored_active:
+                view_layer.objects.active = restored_active
+                if old_mode:
+                    try:
+                        bpy.ops.object.mode_set(mode=old_mode)
+                    except RuntimeError:
+                        pass
 
 
 def _select_only(objects):

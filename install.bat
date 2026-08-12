@@ -7,4 +7,5 @@ xcopy "Linker" "%appdata%\Blender Foundation\Blender\3.1\scripts\addons\Linker" 
 xcopy "Linker" "%appdata%\Blender Foundation\Blender\3.2\scripts\addons\Linker" /E/C/Y/I
 xcopy "Linker" "%appdata%\Blender Foundation\Blender\4.2\scripts\addons\Linker" /E/C/Y/I
 xcopy "Linker" "%appdata%\Blender Foundation\Blender\5.1\scripts\addons\Linker" /E/C/Y/I
+xcopy "Linker" "%appdata%\Blender Foundation\Blender\5.2\scripts\addons\Linker" /E/C/Y/I
 if %errorlevel%==1 pause

@@ -126,6 +126,13 @@ to all of them. With mixed directions, the buttons are disabled and the panel sh
 
 Automatic synchronization is timestamp- and dependency-graph-based; it is not a
 semantic merge. Use explicit Save or Reload when the desired authority must be clear.
+
+Automatic synchronization defers a linked model while any member is in Edit Mode or
+another non-Object mode. The unsaved-changes indicator remains visible while the
+model is deferred. Linker processes it on the next timer pass after every member
+returns to Object Mode. This avoids mode switching, selection changes, or visibility
+changes while you edit geometry. Explicit Save and Reload remain deliberate overrides.
+
 ## Batch behavior and viewport state
 
 These operations act once on every distinct linked model represented by the selection:

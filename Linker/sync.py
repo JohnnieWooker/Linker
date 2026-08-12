@@ -11,7 +11,7 @@ from bpy.app.handlers import persistent
 from bpy.props import PointerProperty
 
 from . import io
-from .models import all_model_owners, migrate_legacy_data, model_owner
+from .models import all_model_owners, migrate_legacy_data, model_members, model_owner
 from .paths import addon_preferences, resolved_path, validation_error
 from .properties import LINKER_PG_TrackingSettings
 
@@ -69,8 +69,10 @@ def _external_state(owner):
     return None, stat.st_mtime, changed
 
 
-def sync_model(owner, force: bool = False) -> str:
-    """Apply direction policy and return IMPORT, EXPORT, CLEAN, or an error."""
+def sync_model(owner, force: bool = False, defer_non_object_mode: bool = False) -> str:
+    """Apply direction policy and return IMPORT, EXPORT, CLEAN, or DEFERRED."""
+    if defer_non_object_mode and any(member.mode != "OBJECT" for member in model_members(owner)):
+        return "DEFERRED"
     error, file_mtime, external_changed = _external_state(owner)
     if error:
         raise ValueError(error)
@@ -103,11 +105,19 @@ def sync_model(owner, force: bool = False) -> str:
     return "CLEAN"
 
 
-def sync_all(scene, force: bool = False):
+def sync_all(scene, force: bool = False, defer_non_object_mode: bool = False):
     results = []
     for owner in all_model_owners(scene):
         try:
-            results.append((owner.linker.model_name, sync_model(owner, force=force), None))
+            results.append((
+                owner.linker.model_name,
+                sync_model(
+                    owner,
+                    force=force,
+                    defer_non_object_mode=defer_non_object_mode,
+                ),
+                None,
+            ))
         except Exception as exc:  # keep other independent models synchronizing
             results.append((owner.linker.model_name, "ERROR", str(exc)))
     return results
@@ -126,7 +136,7 @@ def timer_callback():
             _MIGRATION_PENDING = False
         scene = getattr(bpy.context, "scene", None)
         if scene and scene.linker_auto_sync:
-            sync_all(scene)
+            sync_all(scene, defer_non_object_mode=True)
     except Exception as exc:
         print(f"Linker automatic sync error: {exc}")
     return _poll_interval()
